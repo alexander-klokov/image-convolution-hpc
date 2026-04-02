@@ -50,6 +50,11 @@ $$I = \frac{N_{ops}}{D_{total}} \approx 840 \text{ FLOPs/Byte}$$
 
 The value of 840$ FLOPs/Byte provides a clear diagnosis: my application is *strictly compute-bound*.
 
+
+#### Benchmarking Engine
+
+To measure true hardware speed, my benchmarking engine filters out unpredictable system noise. First, it performs an untimed "warm-up" run to load data into the CPU caches. Then, it times the code across multiple runs and reports the minimum execution time. I prefer the minimum time over the average because it shows the absolute fastest the hardware can perform when it is not interrupted by background operating system tasks.
+
 ## Performance Metrics
 
 #### Throughput ($G$): Measured in Giga-operations per second.
