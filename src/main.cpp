@@ -13,6 +13,7 @@ int main(int argc, char *argv[])
         std::cerr << "Usage: " << argv[0] << " <input.pgm> <output.pgm> <kernel_id>\n";
         std::cerr << "Kernel IDs:\n";
         std::cerr << "  0 : Baseline (Single Thread)\n";
+        std::cerr << "  1 : Convolution Separable (Single Thread)\n";
         return 1;
     }
 
@@ -43,6 +44,9 @@ int main(int argc, char *argv[])
     {
     case 0:
         run_benchmark("Baseline", NUM_RUNS, convolution_baseline, padded, output.data, img.width, img.height, Wp, K, inv_area);
+        break;
+    case 1:
+        run_benchmark("Separable Convolution", NUM_RUNS, convolution_separable, padded, output.data, img.width, img.height, Wp, K, inv_area);
         break;
     default:
         std::cerr << "Error: Invalid kernel ID (" << kernel_id << ").\n";
