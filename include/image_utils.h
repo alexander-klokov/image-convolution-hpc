@@ -1,8 +1,8 @@
-#ifndef IMAGE_UTILS_H
-#define IMAGE_UTILS_H
+#pragma once
 
 #include <string>
 #include <vector>
+#include <immintrin.h>
 
 // image
 struct Image
@@ -17,4 +17,4 @@ Image loadImage(const std::string &filename);
 
 void saveImage(const std::string &filename, const Image &img);
 
-#endif
+__m128i demote_f32_to_u8_avx2(__m256 v_f32);

@@ -1,9 +1,10 @@
 #include <iostream>
 #include <vector>
-#include <chrono>  // For high-resolution timer
-#include <fstream> // For image loading/saving
+#include <chrono>
+#include <fstream>
 #include <string>
-#include <algorithm> // For std::min/max
+#include <algorithm>
+#include <immintrin.h>
 
 #include "image_utils.h"
 
@@ -82,4 +83,17 @@ void saveImage(const std::string &filename, const Image &img)
     {
         std::cerr << "Error: Could not write image data to " << filename << std::endl;
     }
+}
+
+// Helper to handle the AVX2 128-bit lane shuffle during packing
+__m128i demote_f32_to_u8_avx2(__m256 v_f32)
+{
+    __m256i v_i32 = _mm256_cvtps_epi32(v_f32);
+    // Pack 32->16 (Saturate): Grouping is [L0, L1, L4, L5 | L2, L3, L6, L7]
+    __m256i v_u16 = _mm256_packus_epi32(v_i32, v_i32);
+    // Permute to fix lane crossover (Control 0xD8: 11 01 10 00)
+    v_u16 = _mm256_permute4x64_epi64(v_u16, 0xD8);
+    // Pack 16->8 (Saturate)
+    __m256i v_u8 = _mm256_packus_epi16(v_u16, v_u16);
+    return _mm256_castsi256_si128(v_u8);
 }

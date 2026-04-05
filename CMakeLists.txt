@@ -15,7 +15,10 @@ add_executable(convolution_benchmark
     src/main.cpp 
     src/image_utils.cpp
     src/benchmark.cpp
-    src/convolutions.cpp
+    src/kernels/00_convolution_baseline.cpp
+    src/kernels/01_convolution_separable.cpp
+    src/kernels/02_convolution_vertical_simd_sliding.cpp
+    src/kernels/03_convolution_tiled_avx2.cpp
 )
 
 target_include_directories(convolution_benchmark PRIVATE include)

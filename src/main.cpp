@@ -14,16 +14,18 @@ int main(int argc, char *argv[])
         std::cerr << "Kernel IDs:\n";
         std::cerr << "  0 : Baseline (Single Thread)\n";
         std::cerr << "  1 : Convolution Separable (Single Thread)\n";
+        std::cerr << "  2 : Vertical SIMD Sliding Sum (Single Thread)\n";
+        std::cerr << "  3 : Tiled AVX2 (Multi-Threaded)\n";
         return 1;
     }
 
     Image img = loadImage(argv[1]);
-    int kernel_id = std::stoi(argv[3]);
+    auto kernel_id = std::stoi(argv[3]);
 
     const int K = 41;
     const int R = 20;
-    const int Wp = img.width + 2 * R;
-    const int Hp = img.height + 2 * R;
+    const int Wp = img.width + 2 * R;  // width padded
+    const int Hp = img.height + 2 * R; // height padded
     const float inv_area = 1.0f / (K * K);
 
     // Padding
@@ -36,6 +38,7 @@ int main(int argc, char *argv[])
         }
     }
 
+    // Output (blurred) image
     Image output = {std::vector<uint8_t>(img.width * img.height), img.width, img.height, 1};
 
     // Execute the benchmark based on the user's kernel choice
@@ -47,6 +50,12 @@ int main(int argc, char *argv[])
         break;
     case 1:
         run_benchmark("Separable Convolution", NUM_RUNS, convolution_separable, padded, output.data, img.width, img.height, Wp, K, inv_area);
+        break;
+    case 2:
+        run_benchmark("Vertical SIMD Sliding Sum", NUM_RUNS, convolution_vertical_simd_sliding, padded, output.data, img.width, img.height, Wp, K, inv_area);
+        break;
+    case 3:
+        run_benchmark("Tiled AVX2", NUM_RUNS, convolution_tiled_avx2, padded, output.data, img.width, img.height, Wp, K, inv_area);
         break;
     default:
         std::cerr << "Error: Invalid kernel ID (" << kernel_id << ").\n";

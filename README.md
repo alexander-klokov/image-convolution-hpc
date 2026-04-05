@@ -1,16 +1,15 @@
 # HPC Optimization for Image Convolution
 
 ## Overview
+
 * [Motivation](#motivation)
 * [Lessons Learned](#lessons-learned)
 * [Input image and the Convolution Kernel](#input-image-and-the-convolution-kernel)
 * [Baseline](#baseline)
 
-
-
 ## Motivation
 
-My previous exploration into CUDA kernel optimization pushed the _41x41_ image convolution to its hardware limits, achieving nearly 99.5% of the theoretical peak. However, in production environments, the GPU isn't always the only — or even the most accessible — tool available. To round out my understanding of high-performance image processing, this post serves as a direct sequel, pivoting from the massive parallelism of the GPU to the distributed and multi-core world of MPI and OpenMP.The goal remains identical: take a massive image and apply a heavy box filter with maximum efficiency. But the battlefield has changed. Instead of worrying about warp stalls and shared memory bank conflicts, I am now hunting for different bottlenecks: inter-node latency, cache-line bouncing, and the overhead of thread synchronization. Using the same $41 \times 41$ kernel as my benchmark, I will move through an iterative optimization process—starting from a naive distributed approach and ending with a highly tuned implementation that treats the CPU's memory hierarchy with the same reverence I gave the GPU's VRAM.
+My previous exploration into CUDA kernel optimization pushed $41 \times 41$ image convolution to its hardware limits, achieving nearly 99.5% of the theoretical peak. This post serves as a direct sequel. The objective remains the same: apply a heavy box filter to a massive image with maximum efficiency — but this time, the focus shifts to the CPU. Using the same $4032 \times 3024$ image and $41 \times 41$ kernel as a benchmark, I will move through an iterative optimization process, starting from a naive approach and ending with a highly tuned implementation that treats the CPU's memory hierarchy with the same reverence I gave the GPU's VRAM. 
 
 ## Lessons Learned
 
@@ -97,3 +96,42 @@ $$GFLOPS = \frac{1 \text{ GFLOPs} }{0.38 \times 10^9} \approx \mathbf{2.631 \tex
 The drop in GFLOPS highlights a fundamental shift in the bottleneck. In the brute-force version, the CPU was "compute-bound," performing 1,681 operations on every pixel loaded into the cache. By switching to a separable kernel, I reduced the arithmetic intensity so drastically that the bottleneck shifted toward the _Memory Wall_.
 
 While the Horizontal Pass is cache-friendly (Stride-1 access), the Vertical Pass is "cache-hostile." To sum vertical pixels, the CPU must jump across entire image rows (a Stride-$W$ access pattern). Because each row jump likely lands in a different cache line, the hardware is forced to load 64 bytes of data just to use a single 4-byte float. This low cache-line utilization and increased pressure on the L1/L2 caches mean the execution units are frequently stalled, waiting for data from memory. In the world of HPC, this 10x gain is a massive victory, but the 1.8% efficiency is a diagnostic signal: I have optimized the algorithm, and now I must optimize the data orchestration through vectorization and tiling.
+
+## Stage 2: Manual SIMD & The $O(1)$ Complexity Leap
+
+In this stage, I transitioned from compiler-dependent code to manual AVX2 Intrinsics. While the goal was vectorization, the true breakthrough was combining SIMD with a Sliding Window algorithm. By maintaining a "running sum" of columns, I reduced the work per pixel from $O(2K)$ to a constant $O(1)$ operations, regardless of kernel size.
+
+#### Overcoming the AVX2 Lane-Crossing Barrier
+
+The most significant challenge in the SIMD pipeline is the "Demotion" (converting float32 results back to uint8_t). In the AVX2 ISA, packing instructions like _mm256_packus_epi32 are lane-bound—they operate within the two isolated 128-bit halves of the register. Without intervention, a standard pack results in a "shuffled" output ($[0,1,4,5,2,3,6,7]$).
+
+To maintain linear pixel order for the PGM format, I implemented a cross-lane permutation strategy:
+
+1. *Conversion*: `_mm256_cvtps_epi32` transforms 8 floats into 32-bit integers.
+2. *First Pack*: `_mm256_packus_epi32` compresses $8 \times 32$-bit to $8 \times 16$-bit (data is now out of order across lanes).
+3. The Fix: `_mm256_permute4x64_epi64` with the `0xD8` mask swaps the inner 64-bit blocks across the lane boundary, restoring perfect linear order.
+4. *Final Pack & Store*: A final `_mm256_packus_epi16` and `_mm_storel_epi64` writes exactly 8 pixels (64 bits) to memory.
+
+#### Zen 3+ Hardware Orchestration
+
+This kernel is specifically tuned for the AMD Ryzen 5 7535HS architecture:
+- _L1 Store-to-Load Forwarding_: By using a 32-byte aligned col_sums buffer, I facilitate seamless data handoffs. The CPU maintains enough "distance" between the update of a column sum and its next read to avoid costly pipeline stalls.
+- _L3 Cache Residency_: In previous stages, the 48.8 MB intermediate buffer forced the CPU to hit high-latency DRAM ($48.8\text{ MB} > 16\text{ MB L3}$). By tiling the workload to $\approx 3.1\text{ MB}$ per thread, the entire "hot" working set stays within the L3 cache, effectively "hiding" the memory wall.
+
+
+## Stage 3: Multi-Core Scaling & The L3 Cache Strategy
+
+The next leap in this CPU optimization evolution moves from instruction-level saturation to thread-level parallelism via OpenMP. On the AMD Ryzen 5 7535HS, simply adding a `#pragma omp parallel` for isn't enough; true HPC performance requires a sophisticated orchestration of the Zen 3+ cache hierarchy to prevent the 6 physical cores from starving each other for data.
+
+#### Tiling for L3 Cache Residency
+
+In previous stages, the intermediate h_res buffer (approx. 48.8 MB) was too large for the 16 MB L3 cache, forcing the CPU to incur the "DRAM tax" on every read/write. In this multi-threaded version, I implemented a tiling strategy: 
+- _Thread-Local Workspaces_: Each of the 6 threads processes a horizontal "tile" of the image.
+- _The Math_: By limiting each thread’s intermediate tile_h_res and col_sums to $\approx 3.1$ MB, the total active working set across all cores is $\approx 18.6$ MB.
+- _The Result_: While slightly exceeding the 16 MB L3, this "near-resident" strategy ensures that the vast majority of intermediate data handoffs occur at cache speeds rather than memory speeds. We have effectively "shrunk" the image to fit the hardware's sweet spot.
+
+#### Defeating False Sharing and Cache Ping-Pong
+
+A common pitfall in multi-threaded convolution is False Sharing, where threads inadvertently fight over the same 64-byte cache line. To ensure linear scaling, I enforced two strict architectural rules:
+- _Private Allocation_: By moving the allocation of `tile_h_res` and `col_sums` inside the `#pragma omp paralle`l block, each thread receives its own private, heap-allocated workspace.
+- _Explicit Alignment_: Every buffer is aligned to a 32-byte (256-bit) boundary. This ensures that vector loads/stores never straddle cache lines, preventing the hardware from triggering expensive "split-load" penalties or cache-coherency "ping-pong" between cores.
