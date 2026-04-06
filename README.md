@@ -5,14 +5,16 @@
 * [Motivation](#motivation)
 * [Lessons Learned](#lessons-learned)
 * [Input image and the Convolution Kernel](#input-image-and-the-convolution-kernel)
+* [My CPU: AMD Ryzen 5 7535HS (Zen 3+)](#my-cpu-amd-ryzen-5-7535hs-zen-3)
 * [Baseline](#baseline)
 
 ## Motivation
 
-My previous exploration into CUDA kernel optimization pushed $41 \times 41$ image convolution to its hardware limits, achieving nearly 99.5% of the theoretical peak. This post serves as a direct sequel. The objective remains the same: apply a heavy box filter to a massive image with maximum efficiency — but this time, the focus shifts to the CPU. Using the same $4032 \times 3024$ image and $41 \times 41$ kernel as a benchmark, I will move through an iterative optimization process, starting from a naive approach and ending with a highly tuned implementation that treats the CPU's memory hierarchy with the same reverence I gave the GPU's VRAM. 
+My previous exploration into CUDA kernel optimization pushed $41 \times 41$ image convolution to its hardware limits, achieving nearly 99.5% of the theoretical peak. This post serves as a direct sequel. While the objective remains the same — applying a heavy box filter to a massive $4032 \times 3024$ image — the focus now shifts to the CPU. I will detail an iterative optimization process, moving from a naive baseline to a highly tuned implementation that treats the CPU's memory hierarchy with the same reverence I gave the GPU's VRAM.
 
 ## Lessons Learned
 
+- Know you altgorithm. Apply the Big-O arithmetics.
 - Master the flags. Hardware-native compilation is the shortcut to performance.
 
 ## Input Image and the Convolution Kernel
@@ -21,13 +23,20 @@ For this experiment, I am using a PGM (Portable Gray Map) image with a resolutio
 
 <img src="assets/pebble.jpg" width=400 />
 
-The workload remains identical to my GPU-based study: a _41x41_ box filter applied to a high-resolution input. This specific kernel size is intentional. With $1,681$ operations required for every single output pixel, the computational intensity is high enough to move us past simple memory bandwidth limitations and into the realm of instruction throughput.On the CPU, however, the "vibe" of the optimization changes. I am no longer managing warps or shared memory banks. Instead, I am fighting to keep the data within the L1 and L2 caches while ensuring the compiler — or my manual intrinsics — can effectively utilize AVX-512 or AVX2 vector units. A $41 \times 41$ window is large enough that a naive implementation will suffer from "cache thrashing" as I jump between rows, making this an ideal playground for exploring loop tiling and SIMD vectorization.
-
-## My architecture
-
-Pushing CPU-bound vector workloads requires knowing the absolute hardware ceiling. On the AMD Zen 3+ architecture — specifically my Ryzen 5 7535HS — a single core executes a theoretical peak of 32 single-precision FLOPs per clock cycle. When operating at a maximum boost of 4.55 GHz, that establishes a hard architectural limit of 145.6 GFLOPS of FP32 compute per core, assuming perfectly saturated AVX2 and FMA pipelines.
+The workload remains identical to my GPU-based study: a _41x41_ box filter applied to a high-resolution input. This specific kernel size is intentional. With $1,681$ operations required for every single output pixel, the computational intensity is high enough to move us past simple memory bandwidth limitations and into the realm of instruction throughput. On the CPU, however, the "vibe" of the optimization changes. I am no longer managing warps or shared memory banks. Instead, I am fighting to keep the data within the L1 and L2 caches while ensuring the compiler — or my manual intrinsics — can effectively utilize AVX-512 or AVX2 vector units. A $41 \times 41$ window is large enough that a naive implementation will suffer from "cache thrashing" as I jump between rows, making this an ideal playground for exploring loop tiling and SIMD vectorization.
 
 <img src="assets/pebble_filtered.png" width=400 />
+
+## My CPU: AMD Ryzen 5 7535HS (Zen 3+)
+
+For this image convolution experiment, I am using a 6-core, 12-thread Zen 3+ mobile processor. Achieving peak performance for image convolution on this architecture depends on three critical hardware pillars:
+- _Topology & SMT_: 6 physical cores with 12 logical threads. For compute-heavy convolution kernels, pinning threads to the 6 physical cores often yields better results by eliminating resource contention between SMT siblings.
+- _Cache Architecture_:
+    - L2: 3 MiB (512 KiB per core) private.
+    - L3: 16 MiB Unified. This shared pool is vital for image processing, as it allows efficient data reuse for sliding-window operations and tile-based threading without frequent trips to RAM.
+- _Vectorization (SIMD)_: Support for AVX2 (256-bit vectors) and FMA ($a = b \times c + d$). These instructions are the primary engine for convolution, allowing multiple pixel-weight multiplications to occur in a single clock cycle.
+- _Environment_: Running on WSL2 (Microsoft Hypervisor). While it provides near-native execution speeds, the virtualization layer can subtly influence memory management and low-level performance counters during profiling.
+
 
 ## Mathematical Framework for Image Convolution
 
@@ -35,7 +44,7 @@ To evaluate the efficiency of my HPC engine components, I define the workload us
 
 #### Computational Workload ($N_{ops}$)
 
-For an image of size $W \times H$ and a square kernel $K \times K$:$$N_{ops} = (W \times H) \times K^{2}$$ For my $4032 \times 3024$ image and $41 \times 41$ kernel: $\approx 20.5 \times 10^{9}$ FLOPs.
+For an image of size $W \times H$ and a square kernel $K \times K$:$$N_{ops} = (W \times H) \times K^{2}$$ For my $4032 \times 3024$ image and $41 \times 41$ kernel: $\approx 20.5 $ GFLOPs.
 
 #### Memory Traffic ($D_{total}$)
 
@@ -50,17 +59,25 @@ $$I = \frac{N_{ops}}{D_{total}} \approx 840 \text{ FLOPs/Byte}$$
 The value of 840$ FLOPs/Byte provides a clear diagnosis: my application is *strictly compute-bound*.
 
 
-#### Benchmarking Engine
+## Benchmarking Engine
 
 To measure true hardware speed, my benchmarking engine filters out unpredictable system noise. First, it performs an untimed "warm-up" run to load data into the CPU caches. Then, it times the code across multiple runs and reports the minimum execution time. I prefer the minimum time over the average because it shows the absolute fastest the hardware can perform when it is not interrupted by background operating system tasks.
 
 ## Performance Metrics
 
-#### Throughput ($G$): Measured in Giga-operations per second.
+To quantify the success of each optimization stage, I utilize a multi-dimensional metric suite. While "seconds elapsed" is the ultimate goal for the end-user, these metrics allow us to diagnose whether the bottleneck resides in the instruction pipeline, the memory subsystem, or the algorithmic design.
 
-$$G = \frac{N_{ops}}{\text{time} \times 10^{9}}$$
+1. Throughput ($G$). Measured in Giga-Floating Point Operations per Second (GFLOPS). This represents the "velocity" of our computation.$$G = \frac{N_{ops}}{\text{time} \times 10^{9}}$$
 
-Efficiency ($\eta$): Comparison against the theoretical peak of the AMD Ryzen 5 7535HS.
+Note: For $O(1)$ implementations, I distinguish between Effective GFLOPS (work required by the original algorithm) and Raw GFLOPS (actual instructions executed), as the former better represents the speedup gained through algorithmic cleverness.
+
+2. Theoretical Peak ($P_{peak}$)To understand the "ceiling" of my hardware, I calculate the theoretical maximum performance of the AMD Ryzen 5 7535HS. For single-precision (FP32) arithmetic using AVX2 (8-wide SIMD) and FMA (2 ops per cycle):$$P_{peak} = \text{Cores} \times \text{Clock Speed (GHz)} \times \text{SIMD Width} \times \text{FMA Factor}$$For a single core boosting to $4.55 \text{ GHz}$: $1 \times 4.55 \times 8 \times 2 \approx \mathbf{145.6 \text{ GFLOPS}}$.
+
+3. Hardware Efficiency ($\eta_{hw}$)This is the most critical diagnostic for an HPC architect. It measures how much of the available "thermal budget" and silicon we are actually utilizing.$$\eta_{hw} = \left( \frac{G}{P_{peak}} \right) \times 100\%$$
+
+4. Speedup ($S$)Following Amdahl’s Law, we measure the relative improvement of each stage ($T_{new}$) against the baseline ($T_{base}$):$$S = \frac{T_{base}}{T_{new}}$$
+
+5. The Roofline ModelTo contextualize these metrics, I evaluate the kernel against the Roofline Boundary. The Roofline model sets a hard limit on attainable performance based on the relationship between Arithmetic Intensity ($I$) and the hardware’s Peak Memory Bandwidth ($B$).In this model, an implementation is either "Memory-Bound" (stuck on the slanted ridge of bandwidth) or "Compute-Bound" (reaching for the flat ceiling of GFLOPS). With an intensity of $840 \text{ FLOPs/Byte}$, our goal is to drive the implementation as close to the horizontal ceiling as possible.
 
 ## Baseline
 
