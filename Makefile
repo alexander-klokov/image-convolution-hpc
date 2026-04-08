@@ -15,6 +15,7 @@ KERNEL_ID = $(strip $(if $(RUN_ARGS),$(RUN_ARGS),0))
 # executables
 BUILD_DIR = build
 EXEC = convolution_benchmark
+EXEC_MPI = convolution_benchmark_mpi
 
 # input/output
 INPUT = input/pebble.pgm
@@ -33,6 +34,9 @@ run: build
 	@echo "Executing Kernel ID: $(KERNEL_ID)"
 	@echo "========================================"
 	./$(BUILD_DIR)/$(EXEC) $(INPUT) $(OUTPUT) $(KERNEL_ID)
+
+runmpi: build
+		mpirun -np 6 --bind-to core ./$(BUILD_DIR)/$(EXEC_MPI)
 
 # Open the dynamically generated image
 see:

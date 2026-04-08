@@ -6,6 +6,9 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+find_package(OpenMP REQUIRED)
+find_package(MPI REQUIRED)
+
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "" FORCE)
 endif()
@@ -22,6 +25,7 @@ add_executable(convolution_benchmark
     src/kernels/04_convolution_tiled_avx2_threads_06.cpp
 )
 
+
 target_include_directories(convolution_benchmark PRIVATE include)
 target_compile_options(convolution_benchmark PRIVATE 
     -O3           # to trigger the highest level of standard optimization
@@ -35,3 +39,15 @@ check_ipo_supported(RESULT ipo_supported)
 if(ipo_supported)
     set_target_properties(convolution_benchmark PROPERTIES INTERPROCEDURAL_OPTIMIZATION TRUE)
 endif()
+
+
+# Distributed Benchmark (MPI)
+find_package(MPI REQUIRED)
+add_executable(convolution_benchmark_mpi
+    src/main_mpi.cpp)
+target_link_libraries(convolution_benchmark_mpi MPI::MPI_CXX)
+target_compile_options(convolution_benchmark_mpi PRIVATE 
+    -O3           # to trigger the highest level of standard optimization
+    -march=native # to use every instruction set your Ryzen supports (like AVX2 and FMA)
+    -ffast-math   # to ignore strict IEEE floating-point rules to perform faster calculations
+)
