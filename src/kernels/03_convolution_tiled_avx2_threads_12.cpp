@@ -5,7 +5,7 @@
 #include "convolutions.h"
 #include "image_utils.h"
 
-void convolution_tiled_avx2(
+void convolution_tiled_avx2_threads_12(
     const std::vector<uint8_t> &padded,
     std::vector<uint8_t> &output_data,
     int width, int height, int Wp, int K, float inv_area)

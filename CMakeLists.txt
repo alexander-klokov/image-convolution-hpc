@@ -18,7 +18,8 @@ add_executable(convolution_benchmark
     src/kernels/00_convolution_baseline.cpp
     src/kernels/01_convolution_separable.cpp
     src/kernels/02_convolution_vertical_simd_sliding.cpp
-    src/kernels/03_convolution_tiled_avx2.cpp
+    src/kernels/03_convolution_tiled_avx2_threads_12.cpp
+    src/kernels/04_convolution_tiled_avx2_threads_06.cpp
 )
 
 target_include_directories(convolution_benchmark PRIVATE include)

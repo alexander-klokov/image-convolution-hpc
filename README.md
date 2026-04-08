@@ -152,3 +152,13 @@ In previous stages, the intermediate h_res buffer (approx. 48.8 MB) was too larg
 A common pitfall in multi-threaded convolution is False Sharing, where threads inadvertently fight over the same 64-byte cache line. To ensure linear scaling, I enforced two strict architectural rules:
 - _Private Allocation_: By moving the allocation of `tile_h_res` and `col_sums` inside the `#pragma omp paralle`l block, each thread receives its own private, heap-allocated workspace.
 - _Explicit Alignment_: Every buffer is aligned to a 32-byte (256-bit) boundary. This ensures that vector loads/stores never straddle cache lines, preventing the hardware from triggering expensive "split-load" penalties or cache-coherency "ping-pong" between cores.
+
+## Stage 4: Parallelism & The SMT Efficiency Penalty
+
+With a highly optimized $O(1)$ SIMD kernel established, the final bottleneck is no longer the algorithm or the instruction set, but the utilization of the silicon itself. In this stage, I leverage OpenMP to distribute the tiled workload across the Zen 3+ architecture.
+
+#### The SMT Resource Contention Theory
+
+The Ryzen 5 7535HS features 6 physical cores and 12 logical threads via Simultaneous Multithreading (SMT). In many general-purpose workloads, SMT provides a 20-30% performance boost by filling pipeline bubbles. However, in an HPC-heavy AVX2 workload, SMT can become a liability.
+
+Because each physical core shares its Execution Units (ALUs) and SIMD ports between two logical threads, running 12 threads on this specific kernel causes "resource contention." When two threads on the same core both attempt to execute 256-bit FMA (Fused Multiply-Add) instructions, they fight for the same hardware ports, leading to stalls and increased cache pressure.
