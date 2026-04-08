@@ -34,8 +34,9 @@ double run_benchmark(
     // Extract minimum time to bypass OS jitter
     double min_time = *std::min_element(durations.begin(), durations.end());
 
-    std::cout << "Minimum Execution Time: " << std::fixed << std::setprecision(5)
-              << min_time << " s over " << num_runs << " runs." << std::endl
+    std::cout << "Minimum Execution Time: "
+              << std::fixed << std::setprecision(1)
+              << min_time * 1000.0 << " ms over " << num_runs << " runs."
               << std::endl;
 
     return min_time;

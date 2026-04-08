@@ -5,8 +5,9 @@
 #include <iostream>
 #include <cmath>
 #include <cstdint>
+#include <iomanip>
 
-#include "../include/image_utils.h"
+#include "image_utils.h"
 
 // Helper for demotion
 inline __m128i demote_f32_to_u8_avx2(__m256 v)
@@ -100,6 +101,8 @@ int main(int argc, char **argv)
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
+    Image img = loadImage(argv[1]);
+
     // Image Specs
     const int width = 4032;
     const int height = 3024;
@@ -143,8 +146,10 @@ int main(int argc, char **argv)
 
     if (rank == 0)
     {
-        std::cout << "Rank 0: Local Compute Time: " << (t_end - t_start) * 1000.0 << " ms" << std::endl;
-        // Rank 0 would typically MPI_Gather local_output here to reconstruct the full image
+        std::cout << "Rank 0: Local Compute Time: "
+                  << std::fixed << std::setprecision(1)
+                  << (t_end - t_start) * 1000.0
+                  << " ms" << std::endl;
     }
 
     // 1. Prepare metadata for Gatherv
@@ -165,31 +170,38 @@ int main(int argc, char **argv)
     }
 
     // 2. Allocate the final output buffer only on Rank 0
-    std::vector<uint8_t> final_output;
+    Image final_output;
+
     if (rank == 0)
     {
-        final_output.resize(width * height);
+        const int total_elements = img.width * img.height * 1; // 1 for grayscale
+
+        final_output = Image{
+            std::vector<unsigned char>(total_elements),
+            img.width,
+            img.height,
+            1};
     }
 
     // 3. Execute the Gather
     // Each rank sends its local_output to Rank 0's final_output
     MPI_Gatherv(
-        local_output.data(),  // Source buffer
-        local_size,           // Number of elements to send
-        MPI_UNSIGNED_CHAR,    // Data type
-        final_output.data(),  // Destination buffer (ignored on non-zero ranks)
-        recv_counts.data(),   // Array of counts to receive from each rank
-        displacements.data(), // Array of offsets in the destination buffer
-        MPI_UNSIGNED_CHAR,    // Data type
-        0,                    // Root rank
-        MPI_COMM_WORLD        // Communicator
+        local_output.data(),      // Source buffer
+        local_size,               // Number of elements to send
+        MPI_UNSIGNED_CHAR,        // Data type
+        final_output.data.data(), // Destination buffer (ignored on non-zero ranks)
+        recv_counts.data(),       // Array of counts to receive from each rank
+        displacements.data(),     // Array of offsets in the destination buffer
+        MPI_UNSIGNED_CHAR,        // Data type
+        0,                        // Root rank
+        MPI_COMM_WORLD            // Communicator
     );
 
     // 4. Rank 0 now has the full image and can save it to disk
     if (rank == 0)
     {
-        std::cout << "Image reconstruction complete. Final size: " << final_output.size() << " bytes." << std::endl;
-        saveImage("output.mpi", final_output);
+        std::cout << "Image reconstruction complete. Final size: " << final_output.data.size() << " bytes." << std::endl;
+        saveImage(argv[2], final_output);
     }
 
     MPI_Finalize();

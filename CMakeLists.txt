@@ -44,8 +44,11 @@ endif()
 # Distributed Benchmark (MPI)
 find_package(MPI REQUIRED)
 add_executable(convolution_benchmark_mpi
-    src/main_mpi.cpp)
+    src/main_mpi.cpp
+    src/image_utils.cpp
+)
 target_link_libraries(convolution_benchmark_mpi MPI::MPI_CXX)
+target_include_directories(convolution_benchmark_mpi PRIVATE include)
 target_compile_options(convolution_benchmark_mpi PRIVATE 
     -O3           # to trigger the highest level of standard optimization
     -march=native # to use every instruction set your Ryzen supports (like AVX2 and FMA)

@@ -1,7 +1,7 @@
 # The Magic Trick for Positional Arguments
-ifeq (run,$(firstword $(MAKECMDGOALS)))
-  # filter-out removes 'run' from the goals, leaving only the ID
-  RUN_ARGS := $(filter-out run,$(MAKECMDGOALS))
+ifneq (,$(filter run runmpi see,$(firstword $(MAKECMDGOALS))))
+  # filter-out removes 'run' and 'runmpi' from the goals, leaving only the ID
+  RUN_ARGS := $(filter-out run runmpi see,$(MAKECMDGOALS))
   $(eval $(RUN_ARGS):;@:)
 endif
 
@@ -36,7 +36,11 @@ run: build
 	./$(BUILD_DIR)/$(EXEC) $(INPUT) $(OUTPUT) $(KERNEL_ID)
 
 runmpi: build
-		mpirun -np 6 --bind-to core ./$(BUILD_DIR)/$(EXEC_MPI)
+	@mkdir -p output
+	@echo "========================================"
+	@echo "Executing Kernel ID: $(KERNEL_ID)"
+	@echo "========================================"
+	mpirun -np 6 --bind-to core ./$(BUILD_DIR)/$(EXEC_MPI) $(INPUT) $(OUTPUT)
 
 # Open the dynamically generated image
 see:
