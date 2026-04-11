@@ -6,6 +6,7 @@
 * [Lessons Learned](#lessons-learned)
 * [Input image and the Convolution Kernel](#input-image-and-the-convolution-kernel)
 * [My CPU: AMD Ryzen 5 7535HS (Zen 3+)](#my-cpu-amd-ryzen-5-7535hs-zen-3)
+* [Performance Metrics](#performance-metrics)
 * [Baseline](#baseline)
 
 ## Motivation
@@ -29,59 +30,50 @@ The workload remains identical to my GPU-based study: a _41x41_ box filter appli
 
 ## My CPU: AMD Ryzen 5 7535HS (Zen 3+)
 
-For this image convolution experiment, I am using a 6-core, 12-thread Zen 3+ mobile processor. Achieving peak performance for image convolution on this architecture depends on three critical hardware pillars:
+For this image convolution experiment, I am using a *6-core, 12-thread Zen 3+* mobile processor. Achieving peak performance for image convolution on this architecture depends on several critical hardware pillars:
 - _Topology & SMT_: 6 physical cores with 12 logical threads. For compute-heavy convolution kernels, pinning threads to the 6 physical cores often yields better results by eliminating resource contention between SMT siblings.
-- _Cache Architecture_:
-    - L2: 3 MiB (512 KiB per core) private.
-    - L3: 16 MiB Unified. This shared pool is vital for image processing, as it allows efficient data reuse for sliding-window operations and tile-based threading without frequent trips to RAM.
-- _Vectorization (SIMD)_: Support for AVX2 (256-bit vectors) and FMA ($a = b \times c + d$). These instructions are the primary engine for convolution, allowing multiple pixel-weight multiplications to occur in a single clock cycle.
+- _Cache Architecture_: L2: 3 MiB (512 KiB per core) private; L3: 16 MiB Unified. This shared pool is vital for image processing, as it allows efficient data reuse for sliding-window operations and tile-based threading without frequent trips to RAM.
+- _Vectorization (SIMD)_: Support for AVX2 (256-bit vectors) and FMA ($a = b \times c + d$). These instructions are the primary engine for convolution, allowing up to 32 single-precision operations per cycle per core.
 - _Environment_: Running on WSL2 (Microsoft Hypervisor). While it provides near-native execution speeds, the virtualization layer can subtly influence memory management and low-level performance counters during profiling.
-
-
-## Mathematical Framework for Image Convolution
-
-To evaluate the efficiency of my HPC engine components, I define the workload using three core metrics:
-
-#### Computational Workload ($N_{ops}$)
-
-For an image of size $W \times H$ and a square kernel $K \times K$:$$N_{ops} = (W \times H) \times K^{2}$$ For my $4032 \times 3024$ image and $41 \times 41$ kernel: $\approx 20.5 $ GFLOPs.
-
-#### Memory Traffic ($D_{total}$)
-
-Since I'm processing a 1-byte-per-pixel grayscale image:
-$$D_{total} = (W \times H \times 1 \text{ byte}_{\text{read}}) + (W \times H \times 1 \text{ byte}_{\text{write}}) \approx 24.4 \times 10^{6} \text{ Bytes}$$
-
-#### Arithmetic Intensity ($I$)
-
-This ratio determines if my application is compute-bound or memory-bound: 
-$$I = \frac{N_{ops}}{D_{total}} \approx 840 \text{ FLOPs/Byte}$$
-
-The value of 840$ FLOPs/Byte provides a clear diagnosis: my application is *strictly compute-bound*.
-
-
-## Benchmarking Engine
-
-To measure true hardware speed, my benchmarking engine filters out unpredictable system noise. First, it performs an untimed "warm-up" run to load data into the CPU caches. Then, it times the code across multiple runs and reports the minimum execution time. I prefer the minimum time over the average because it shows the absolute fastest the hardware can perform when it is not interrupted by background operating system tasks.
 
 ## Performance Metrics
 
-To quantify the success of each optimization stage, I utilize a multi-dimensional metric suite. While "seconds elapsed" is the ultimate goal for the end-user, these metrics allow us to diagnose whether the bottleneck resides in the instruction pipeline, the memory subsystem, or the algorithmic design.
+To quantify the success of each optimization stage, I utilize a multi-dimensional metric suite. While "seconds elapsed" is the ultimate goal, these metrics diagnose whether the bottleneck resides in the instruction pipeline, the memory subsystem, or the algorithmic design.
 
-1. Throughput ($G$). Measured in Giga-Floating Point Operations per Second (GFLOPS). This represents the "velocity" of our computation.$$G = \frac{N_{ops}}{\text{time} \times 10^{9}}$$
+#### Throughput ($G$)
 
-Note: For $O(1)$ implementations, I distinguish between Effective GFLOPS (work required by the original algorithm) and Raw GFLOPS (actual instructions executed), as the former better represents the speedup gained through algorithmic cleverness.
+Measured in Giga-Floating Point Operations per Second (GFLOPS). This represents the "velocity" of my computation.
 
-2. Theoretical Peak ($P_{peak}$)To understand the "ceiling" of my hardware, I calculate the theoretical maximum performance of the AMD Ryzen 5 7535HS. For single-precision (FP32) arithmetic using AVX2 (8-wide SIMD) and FMA (2 ops per cycle):$$P_{peak} = \text{Cores} \times \text{Clock Speed (GHz)} \times \text{SIMD Width} \times \text{FMA Factor}$$For a single core boosting to $4.55 \text{ GHz}$: $1 \times 4.55 \times 8 \times 2 \approx \mathbf{145.6 \text{ GFLOPS}}$.
+$$G = \frac{N_{ops}}{\text{time} \times 10^{9}}$$
 
-3. Hardware Efficiency ($\eta_{hw}$)This is the most critical diagnostic for an HPC architect. It measures how much of the available "thermal budget" and silicon we are actually utilizing.$$\eta_{hw} = \left( \frac{G}{P_{peak}} \right) \times 100\%$$
+_Note: I distinguish between Effective GFLOPS (work required by the original $O(K^2)$ algorithm) and Raw GFLOPS (actual instructions executed), as the former better represents the speedup gained through algorithmic efficiency._
 
-4. Speedup ($S$)Following Amdahl’s Law, we measure the relative improvement of each stage ($T_{new}$) against the baseline ($T_{base}$):$$S = \frac{T_{base}}{T_{new}}$$
+#### Theoretical Peak ($P_{peak}$)
 
-5. The Roofline ModelTo contextualize these metrics, I evaluate the kernel against the Roofline Boundary. The Roofline model sets a hard limit on attainable performance based on the relationship between Arithmetic Intensity ($I$) and the hardware’s Peak Memory Bandwidth ($B$).In this model, an implementation is either "Memory-Bound" (stuck on the slanted ridge of bandwidth) or "Compute-Bound" (reaching for the flat ceiling of GFLOPS). With an intensity of $840 \text{ FLOPs/Byte}$, our goal is to drive the implementation as close to the horizontal ceiling as possible.
+To understand the hardware "ceiling," I calculate the maximum performance of the AMD Ryzen 5 7535HS. For single-precision (FP32) arithmetic using AVX2 and dual FMA units:
 
-## Baseline
+$$P_{peak} = \text{Cores} \times \text{Clock Speed (GHz)} \times 32 \text{ FLOPs/cycle}$$
+For a single core boosting to $4.55 \text{ GHz}$: $1 \times 4.55 \times 32 = \mathbf{145.6 \text{ GFLOPS}}$.
 
-To start this experiment, I needed a strong serial baseline. It is not enough to write "naive" code; I wanted to see the maximum possible speed for this algorithm on a single core before moving to parallel versions.The task is heavy: applying a 41x41 box filter to a _4032x3024_ grayscale image. This requires 20.5 billion floating-point operations. For a single core on my _AMD Ryzen 5 7535HS (Zen 3+)_, this is a purely compute-bound problem.
+#### Hardware Efficiency ($\eta_{hw}$)
+
+A critical diagnostic for HPC performance. It measures how much of the available silicon throughput we are actually saturating.
+
+$$\eta_{hw} = \left( \frac{G}{P_{peak}} \right) \times 100\%$$
+
+#### Speedup ($S$)
+
+Following Amdahl’s Law, I measure the relative improvement of each stage ($T_{new}$) against the baseline ($T_{base}$):
+
+$$S = \frac{T_{base}}{T_{new}}$$
+
+#### The Roofline Model
+
+ I evaluate the kernel against the Roofline Boundary, which sets a limit on performance based on the relationship between Arithmetic Intensity ($I$) and Peak Memory Bandwidth ($B$). In this model, an implementation is either "Memory-Bound" (limited by data transfer) or "Compute-Bound" (limited by the GFLOPS ceiling).
+
+## The Baseline
+
+To start this experiment, I need a strong serial baseline. It is not enough to write "naive" code; I wanted to see the maximum possible speed for this algorithm on a single core before moving to parallel versions. The task is heavy: applying a 41x41 box filter to a _4032x3024_ grayscale image. This requires 20.5 billion floating-point operations. For a single core on my _AMD Ryzen 5 7535HS (Zen 3+)_, this is a purely compute-bound problem.
 
 ### Algorithm and Memory Logic
 
@@ -162,3 +154,33 @@ With a highly optimized $O(1)$ SIMD kernel established, the final bottleneck is 
 The Ryzen 5 7535HS features 6 physical cores and 12 logical threads via Simultaneous Multithreading (SMT). In many general-purpose workloads, SMT provides a 20-30% performance boost by filling pipeline bubbles. However, in an HPC-heavy AVX2 workload, SMT can become a liability.
 
 Because each physical core shares its Execution Units (ALUs) and SIMD ports between two logical threads, running 12 threads on this specific kernel causes "resource contention." When two threads on the same core both attempt to execute 256-bit FMA (Fused Multiply-Add) instructions, they fight for the same hardware ports, leading to stalls and increased cache pressure.
+
+
+----
+
+
+## Mathematical Framework for Image Convolution
+
+To evaluate the efficiency of my HPC engine components, I define the workload using three core metrics:
+
+#### Computational Workload ($N_{ops}$)
+
+For an image of size $W \times H$ and a square kernel $K \times K$:$$N_{ops} = (W \times H) \times K^{2}$$ For my $4032 \times 3024$ image and $41 \times 41$ kernel: $\approx 20.5 $ GFLOPs.
+
+#### Memory Traffic ($D_{total}$)
+
+Since I'm processing a 1-byte-per-pixel grayscale image:
+$$D_{total} = (W \times H \times 1 \text{ byte}_{\text{read}}) + (W \times H \times 1 \text{ byte}_{\text{write}}) \approx 24.4 \times 10^{6} \text{ Bytes}$$
+
+#### Arithmetic Intensity ($I$)
+
+This ratio determines if my application is compute-bound or memory-bound: 
+$$I = \frac{N_{ops}}{D_{total}} \approx 840 \text{ FLOPs/Byte}$$
+
+The value of 840$ FLOPs/Byte provides a clear diagnosis: my application is *strictly compute-bound*.
+
+---
+
+## Benchmarking Engine
+
+To measure true hardware speed, my benchmarking engine filters out unpredictable system noise. First, it performs an untimed "warm-up" run to load data into the CPU caches. Then, it times the code across multiple runs and reports the minimum execution time. I prefer the minimum time over the average because it shows the absolute fastest the hardware can perform when it is not interrupted by background operating system tasks.
