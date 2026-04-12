@@ -24,8 +24,7 @@ In my previous project, I optimized a CUDA kernel for image convolution and reac
 
 ## Lessons Learned
 
-- Know your algorithm.
-- Apply the Big-O arithmetics.
+- Know your algorithm. Apply the Big-O arithmetics.
 - Master the flags. Hardware-native compilation is the shortcut to performance.
 - Cache is king. Use tiling to keep data near the execution units and avoid the DRAM tax.
 - Respect the memory wall. Bandwidth dictates the final speed once data exceeds the L3 cache.
