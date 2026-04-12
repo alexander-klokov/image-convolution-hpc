@@ -24,9 +24,13 @@ In my previous project, I optimized a CUDA kernel for image convolution and reac
 
 ## Lessons Learned
 
-- Efficiency comes from matching your math to your hardware.
-- Know you altgorithm. Apply the Big-O arithmetics.
+- Know your algorithm.
+- Apply the Big-O arithmetics.
 - Master the flags. Hardware-native compilation is the shortcut to performance.
+- Cache is king. Use tiling to keep data near the execution units and avoid the DRAM tax.
+- Respect the memory wall. Bandwidth dictates the final speed once data exceeds the L3 cache.
+- Physical cores first. SMT offers little benefit for saturated vector pipelines and causes resource contention.
+- Smart math beats raw power. An $O(1)$ algorithm on a CPU can outrun a brute-force $O(K^{2})$ kernel on a GPU.
 
 ## Input Image and the Convolution Kernel
 
