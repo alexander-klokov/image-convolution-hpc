@@ -24,6 +24,7 @@ In my previous project, I optimized a CUDA kernel for image convolution and reac
 
 ## Lessons Learned
 
+- Efficiency comes from matching your math to your hardware.
 - Know you altgorithm. Apply the Big-O arithmetics.
 - Master the flags. Hardware-native compilation is the shortcut to performance.
 
@@ -87,6 +88,7 @@ _Note: I distinguish between Effective GFLOPS (work required by the original $O(
 To understand the hardware "ceiling," I calculate the maximum performance of my Ryzen 5 7535HS. For single-precision (FP32) arithmetic using AVX2 and dual FMA units:
 
 $$P_{peak} = \text{Cores} \times \text{Clock Speed (GHz)} \times 32 \text{ FLOPs/cycle}$$
+
 For a single core boosting to $4.55 \text{ GHz}$: $1 \times 4.55 \times 32 = \mathbf{145.6 \text{ GFLOPS}}$.
 
 #### Hardware Efficiency ($\eta_{hw}$)
@@ -166,7 +168,7 @@ By transitioning to a Separable Convolution ($O(2K)$), the execution time droppe
 
 ## Stage 2: Manual SIMD
 
-In this stage, I transitioned from compiler-dependent code to manual AVX2 Intrinsics. While the goal was vectorization, the true breakthrough was combining SIMD with a Sliding Window algorithm. By maintaining a "running sum" of columns, I reduced the work per pixel from $O(2K)$ to a constant $O(1)$ operations, regardless of kernel size.
+In this stage, I transitioned from compiler-dependent code to manual AVX2 Intrinsics. While the goal was vectorization, the true breakthrough was combining SIMD with a Sliding Window algorithm. Instead of re-summing all $K$ pixels for every new position, the algorithm takes the sum from the previous pixel, subtracts the one pixel leaving the window, and adds the one pixel entering it. This reduces the workload to a constant two operations per pixel, regardless of whether the kernel size is 5 or 41. By maintaining a "running sum" of columns, I reduced the work per pixel from $O(2K)$ to a constant $O(1)$ operations.
 
 #### Overcoming the AVX2 Lane-Crossing Barrier
 
@@ -206,12 +208,12 @@ The next stage is moving from instruction-level saturation to thread-level paral
 In previous stages, the intermediate _h_res_ buffer (approx. 48.8 MB) was too large for the 16 MB L3 cache, forcing the CPU to incur the "DRAM tax" on every read/write. In this multi-threaded version, I implemented a tiling strategy: 
 - _Thread-Local Workspaces_: Each of the 6 threads processes a horizontal "tile" of the image.
 - _The Math_: By limiting each thread’s intermediate `tile_h_res` and `col_sums` to $\approx 3.1$ MB, the total active working set across all cores is $\approx 18.6$ MB.
-- _The Result_: Although the data slightly exceeds the $16\text{ MB}$ L3 cache, most data transfers happen at cache speeds rather than memory speeds. This method ensures the workload size fits the hardware capacity.
+- _The Result_: Even though it slightly exceeds 16 MiB, the LRU (Least Recently Used) policy of the cache likely keeps the most critical data "hot" - most data transfers happen at cache speeds rather than memory speeds. This method ensures the workload size fits the hardware capacity.
 
 #### Preventing False Sharing and Cache Invalidation
 
-A common problem in multi-threaded convolution is False Sharing. This happens when multiple threads access the same $64$-byte cache line at the same time. To ensure that performance scales linearly with the number of cores, I applied two technical rules:
-- _Private Allocation_: I moved the allocation of tile_h_res and col_sums inside the #pragma omp parallel block. This ensures that each thread has its own private workspace on the heap.
+A common problem in multi-threaded convolution is _False Sharing_. This happens when multiple threads access the same $64$-byte cache line at the same time. To ensure that performance scales linearly with the number of cores, I applied two technical rules:
+- _Private Allocation_: I moved the allocation of tile_h_res and col_sums inside the `#pragma omp parallel` block. This ensures that each thread has its own private workspace on the heap.
 - _Explicit Alignment_: I aligned every buffer to a $32$-byte ($256$-bit) boundary. This prevents vector operations from crossing the boundary between two cache lines. This stops the hardware from performing "split-loads" and eliminates unnecessary cache synchronization between CPU cores.
 
 #### Performance Evaluation
@@ -244,7 +246,6 @@ Increasing the thread count to 12 (using SMT) only improves performance by 4%. T
 
 The 6-thread configuration is the most efficient choice. It achieves 91.6% hardware efficiency and avoids the extra heat and lower scaling caused by using 12 threads.
 
-
 ## The "Memory Wall" Stress Test
 
 This version removes all metaphors and uses the direct, literal style you prefer.8K Resolution PerformanceTesting with 8K resolution ($7680 \times 5760$) shows the limits of the Zen 3+ cache. The dataset at this resolution is much larger than the $16\text{ MiB}$ L3 cache of the Ryzen 5 7535HS. While the 4K data mostly stayed in the cache, the 8K workload requires a $44.2\text{ MiB}$ input and a $176\text{ MiB}$ intermediate buffer. This exceeds the cache size and requires the CPU to access the DDR5-4800 memory bus directly.
@@ -271,7 +272,7 @@ The contrast between the NVIDIA GeForce RTX 4060 and the AMD Ryzen 5 7535HS in t
 
 This "Super-Peak" performance—delivering an effective 833.17 GFLOPS—proves that while the GPU has a significantly higher theoretical TFLOP ceiling, a CPU can win the race if it can fundamentally reduce the arithmetic intensity of the workload. Ultimately, the GPU represents the power of massive parallel scaling for general kernels, whereas the CPU implementation showcases the power of SIMD (Single Instruction, Multiple Data) when paired with algorithmic complexity reduction.
 
-### Comparison Summary: 4K Image Convolution
+#### Comparison Summary: 4K Image Convolution
 
 | Metric | CUDA (RTX 4060) | CPU (Ryzen 5 7535HS) | Winner |
 | :--- | :--- | :--- | :--- |
@@ -284,7 +285,13 @@ This "Super-Peak" performance—delivering an effective 833.17 GFLOPS—proves t
 
 I started with a basic $O(K^2)$ code and improved it until it became a fast, tiled $O(1)$ AVX2 engine. This project showed us that how you design your code is more important than just having more power.
 
-Key Lessons:
+#### Roofline Model
+
+The Roofline Model for this optimization project reveals the systematic elimination of "instruction starvation" on the Zen 3+ architecture. While the $O(K^2)$ baseline was stuck deep in the compute-bound region at a mere 4.49 GFLOPS, it utilized less than 4% of the available silicon. The shift to a separable $O(2K)$ algorithm actually moved the bottleneck toward the memory-bound slope, proving that algorithmic efficiency often trades compute pressure for memory pressure.  The ultimate breakthrough arrived with the $O(1)$ sliding window and cache-aware tiling. By pinning the working set within the 16 MiB L3 cache, the 12-thread implementation achieved a "super-peak" of 833.17 GFLOPS—effectively saturating 95.3% of the theoretical $P_{peak}$. This trajectory demonstrates that on a mobile SoC, hitting the hardware ceiling requires more than just parallel loops; it requires a fundamental reduction in arithmetic intensity to bypass the "Memory Wall." The performance dip in the 8K stress test serves as a final hardware reality check, confirming that once the algorithm is perfected, the physical bandwidth of the DDR5 memory bus becomes the absolute limit of the system.
+
+<img src="assets/convolution_roofline.png" width=800 />
+
+#### Key Lessons
 
 - Smart Math Beats Raw Power: Moving to an $O(1)$ algorithm was our biggest win. It allowed one CPU core to act like a much more powerful processor. It reminds us that the best way to save time is to remove unnecessary calculations.
 
@@ -292,16 +299,4 @@ Key Lessons:
 
 - The Memory Wall: Our 8K image test showed that there is a final limit to speed. Once the math is perfect, the only limit left is how fast the memory (DDR5) can move data. Even so, our tiling strategy kept the performance very high.
 
-This project proves that standard hardware can do amazing things if you tune the software perfectly. We achieved a 185x speedup not just by writing faster code, but by understanding how the CPU works. Whether we move to larger clusters or stay on one machine, the lesson is the same: efficiency comes from matching your math to your hardware.
-
----
-
-#### The SMT Resource Contention Theory
-
-The Ryzen 5 7535HS features 6 physical cores and 12 logical threads via Simultaneous Multithreading (SMT). In many general-purpose workloads, SMT provides a 20-30% performance boost by filling pipeline bubbles. However, in an HPC-heavy AVX2 workload, SMT can become a liability.
-
-Because each physical core shares its Execution Units (ALUs) and SIMD ports between two logical threads, running 12 threads on this specific kernel causes "resource contention." When two threads on the same core both attempt to execute 256-bit FMA (Fused Multiply-Add) instructions, they fight for the same hardware ports, leading to stalls and increased cache pressure.
-
----
-
-While the box filter could be implemented using 16-bit integer SIMD to double throughput, I utilized FP32 to maintain compatibility with complex kernels (like Gaussian blurs) and to allow for normalization without precision loss during intermediate stages.
+This project proves that standard hardware can do amazing things if you tune the software perfectly. I achieved a 185x speedup not just by writing faster code, but by understanding how the CPU works. Whether we move to larger clusters or stay on one machine, the lesson is the same: _efficiency comes from matching your math to your hardware_.
