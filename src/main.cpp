@@ -15,8 +15,8 @@ int main(int argc, char *argv[])
         std::cerr << "  0 : Baseline (Single Thread)\n";
         std::cerr << "  1 : Convolution Separable (Single Thread)\n";
         std::cerr << "  2 : Vertical SIMD Sliding Sum (Single Thread)\n";
-        std::cerr << "  3 : Tiled AVX2 (Multi-Threaded, all 12 threads)\n";
-        std::cerr << "  4 : Tiled AVX2 (Multi-Threaded, 6 threads (physical cores only))\n";
+        std::cerr << "  3 : Tiled AVX2 (Multi-Threaded, 6 threads (physical cores only))\n";
+        std::cerr << "  4 : Tiled AVX2 (Multi-Threaded, all 12 threads)\n";
         return 1;
     }
 
@@ -56,10 +56,10 @@ int main(int argc, char *argv[])
         run_benchmark("Vertical SIMD Sliding Sum", NUM_RUNS, convolution_vertical_simd_sliding, padded, output.data, img.width, img.height, Wp, K, inv_area);
         break;
     case 3:
-        run_benchmark("Tiled AVX2", NUM_RUNS, convolution_tiled_avx2_threads_12, padded, output.data, img.width, img.height, Wp, K, inv_area);
+        run_benchmark("Tiled AVX2 (6 threads)", NUM_RUNS, convolution_tiled_avx2_threads_06, padded, output.data, img.width, img.height, Wp, K, inv_area);
         break;
     case 4:
-        run_benchmark("Tiled AVX2", NUM_RUNS, convolution_tiled_avx2_threads_06, padded, output.data, img.width, img.height, Wp, K, inv_area);
+        run_benchmark("Tiled AVX2 (12 threads)", NUM_RUNS, convolution_tiled_avx2_threads_12, padded, output.data, img.width, img.height, Wp, K, inv_area);
         break;
     default:
         std::cerr << "Error: Invalid kernel ID (" << kernel_id << ").\n";
