@@ -45,19 +45,19 @@ To evaluate the efficiency of my HPC engine components, I define the workload us
 
 #### Computational Workload ($N_{ops}$)
 
-For an image of size $W \times H$ and a square kernel $K \times K$:$$N_{ops} = (W \times H) \times K^{2}$$ For my $4032 \times 3024$ image and $41 \times 41$ kernel: $\approx 20.5 $ GFLOPs.
+For an image of size $W \times H$ and a square kernel $K \times K$:$$N_{ops} = (W \times H) \times K^{2}$$
+
+For my $4032 \times 3024$ image and $41 \times 41$ kernel: $\approx 20.5$ GFLOPs.
 
 #### Memory Traffic ($D_{total}$)
 
-Since I'm processing a 1-byte-per-pixel grayscale image:
-$$D_{total} = (W \times H \times 1 \text{ byte}_{\text{read}}) + (W \times H \times 1 \text{ byte}_{\text{write}}) \approx 24.4 \times 10^{6} \text{ Bytes}$$
+Since I'm processing a 1-byte-per-pixel grayscale image:$$D_{total} = (W \times H \times 1 \text{ byte}_{\text{read}}) + (W \times H \times 1 \text{ byte}_{\text{write}}) \approx 24.4 \times 10^{6} \text{ Bytes}$$
 
 #### Arithmetic Intensity ($I$)
 
-This ratio determines if my application is compute-bound or memory-bound: 
-$$I = \frac{N_{ops}}{D_{total}} \approx 840 \text{ FLOPs/Byte}$$
+This ratio determines if my application is compute-bound or memory-bound:$$I = \frac{N_{ops}}{D_{total}} \approx 840 \text{ FLOPs/Byte}$$
 
-The value of _840_ FLOPs/Byte provides a clear diagnosis: my application is *strictly compute-bound*.
+The value of 840 FLOPs/Byte provides a clear diagnosis: my application is strictly _compute-bound_.
 
 ## My CPU: AMD Ryzen 5 7535HS (Zen 3+)
 
