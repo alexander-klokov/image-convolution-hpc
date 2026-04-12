@@ -20,7 +20,7 @@
 
 ## Motivation
 
-My previous exploration into CUDA kernel optimization pushed $41 \times 41$ image convolution to its hardware limits, achieving nearly 99.5% of the theoretical peak. This post serves as a direct sequel. While the objective remains the same — applying a heavy box filter to a massive $4032 \times 3024$ image — the focus now shifts to the CPU. I will detail an iterative optimization process, moving from a naive baseline to a highly tuned implementation that treats the CPU's memory hierarchy with the same reverence I gave the GPU's VRAM.
+In my previous project, I optimized a CUDA kernel for image convolution and reached 99.5% of the GPU’s peak performance. This post is a direct sequel. The goal is the same—applying a _41x41_ filter to a _4032x3024_ image—but now the focus shifts to the CPU. I will show the step-by-step process of moving from a simple baseline to a high-performance version that uses the CPU's memory and cache as efficiently as I used the GPU's VRAM.
 
 ## Lessons Learned
 
@@ -29,15 +29,11 @@ My previous exploration into CUDA kernel optimization pushed $41 \times 41$ imag
 
 ## Input Image and the Convolution Kernel
 
-For this experiment, I am using a PGM (Portable Gray Map) image with a resolution of _4032x3024_. This is a single-channel grayscale image (12.2 Megapixels), which simplifies the problem because I can focus on the convolution logic without the overhead of handling multiple color channels. The choice of 4032 pixels for the width is intentional; it is a multiple of 64, which aligns perfectly with the CPU cache line size. Using the binary P5 format allows the program to load the entire 12.2 MB of raw pixel data into memory in one operation. This ensures that the time spent on I/O is minimal and does not interfere with the performance measurements of the convolution kernel.
-
-While the box filter could be implemented using 16-bit integer SIMD to double throughput, I utilized FP32 to maintain compatibility with complex kernels (like Gaussian blurs) and to allow for normalization without precision loss during intermediate stages.
+I am using a 4032x3024 PGM (Portable Gray Map) image for this experiment. This 12.2-megapixel grayscale image allows me to focus on the convolution logic without the complexity of color channels. I specifically chose a width of 4032 pixels because it is a multiple of 64, which aligns perfectly with the CPU cache line size. By using the binary P5 format, the program loads the entire 12.2 MB of data in one operation. This minimizes I/O time and ensures my benchmarks focus strictly on the convolution kernel's performance.
 
 <img src="assets/pebble.jpg" width=400 />
 
-The workload remains identical to my GPU-based study: a _41x41_ box filter applied to a high-resolution input. This specific kernel size is intentional. With $1,681$ operations required for every single output pixel, the computational intensity is high enough to move us past simple memory bandwidth limitations and into the realm of instruction throughput. On the CPU, however, the "vibe" of the optimization changes. I am no longer managing warps or shared memory banks. Instead, I am fighting to keep the data within the L1 and L2 caches while ensuring the compiler — or my manual intrinsics — can effectively utilize AVX-512 or AVX2 vector units. A $41 \times 41$ window is large enough that a naive implementation will suffer from "cache thrashing" as I jump between rows, making this an ideal playground for exploring loop tiling and SIMD vectorization.
-
-<img src="assets/pebble_filtered.png" width=400 />
+I am applying a $41 \times 41$ box filter to this 4K resolution input. This kernel size is intentional. Because each output pixel requires 1,681 operations, the bottleneck shifts from memory bandwidth to instruction throughput. On the CPU, the optimization strategy changes. I no longer manage warps or shared memory. Instead, I must keep the data in L1 and L2 caches and ensure that the code uses AVX-512 or AVX2 vector units. A $41 \times 41$ window is large enough that a naive implementation causes cache thrashing. This makes it an excellent case for testing loop tiling and SIMD vectorization. 
 
 ## Mathematical Framework for Image Convolution
 
@@ -61,11 +57,12 @@ The value of 840 FLOPs/Byte provides a clear diagnosis: my application is strict
 
 ## My CPU: AMD Ryzen 5 7535HS (Zen 3+)
 
-For this image convolution experiment, I am using a *6-core, 12-thread Zen 3+* mobile processor. Achieving peak performance for image convolution on this architecture depends on several critical hardware pillars:
+For this experiment, I am using a *6-core, 12-thread Zen 3+* mobile processor. Achieving peak performance for image convolution on this architecture depends on several critical hardware pillars:
 - _Topology & SMT_: 6 physical cores with 12 logical threads. For compute-heavy convolution kernels, pinning threads to the 6 physical cores often yields better results by eliminating resource contention between SMT siblings.
 - _Cache Architecture_: L2: 3 MiB (512 KiB per core) private; L3: 16 MiB Unified. This shared pool is vital for image processing, as it allows efficient data reuse for sliding-window operations and tile-based threading without frequent trips to RAM.
 - _Vectorization (SIMD)_: Support for AVX2 (256-bit vectors) and FMA ($a = b \times c + d$). These instructions are the primary engine for convolution, allowing up to 32 single-precision operations per cycle per core.
-- _Environment_: Running on WSL2 (Microsoft Hypervisor). While it provides near-native execution speeds, the virtualization layer can subtly influence memory management and low-level performance counters during profiling.
+
+_Need: I'm running on WSL2 (Microsoft Hypervisor). While it provides near-native execution speeds, the virtualization layer can subtly influence memory management and low-level performance counters during profiling._
 
 ## Performance Metrics
 
@@ -81,7 +78,7 @@ _Note: I distinguish between Effective GFLOPS (work required by the original $O(
 
 #### Theoretical Peak ($P_{peak}$)
 
-To understand the hardware "ceiling," I calculate the maximum performance of the AMD Ryzen 5 7535HS. For single-precision (FP32) arithmetic using AVX2 and dual FMA units:
+To understand the hardware "ceiling," I calculate the maximum performance of my Ryzen 5 7535HS. For single-precision (FP32) arithmetic using AVX2 and dual FMA units:
 
 $$P_{peak} = \text{Cores} \times \text{Clock Speed (GHz)} \times 32 \text{ FLOPs/cycle}$$
 For a single core boosting to $4.55 \text{ GHz}$: $1 \times 4.55 \times 32 = \mathbf{145.6 \text{ GFLOPS}}$.
@@ -104,29 +101,29 @@ $$S = \frac{T_{base}}{T_{new}}$$
 
 ## Benchmarking Engine
 
-To measure true hardware speed, my benchmarking engine filters out unpredictable system noise. First, it performs an untimed "warm-up" run to load data into the CPU caches. Then, it times the code across multiple runs and reports the minimum execution time. I prefer the minimum time over the average because it shows the absolute fastest the hardware can perform when it is not interrupted by background operating system tasks.
+To measure true hardware speed, I'm trying to filter out unpredictable system noise. First, my benchmarking engine performs an untimed "warm-up" run to load data into the CPU caches. Then, it times the code across multiple runs and reports the _minimum execution time_. I prefer the minimum time over the average because it shows the absolute fastest the hardware can perform when it is not interrupted by background operating system tasks.
 
 ## The Baseline
 
-To start this experiment, I need a strong serial baseline. It is not enough to write "naive" code; I wanted to see the maximum possible speed for this algorithm on a single core before moving to parallel versions. The task is heavy: applying a 41x41 box filter to a _4032x3024_ grayscale image. This requires 20.5 billion floating-point operations. For a single core on my _AMD Ryzen 5 7535HS (Zen 3+)_, this is a purely compute-bound problem.
+To start this experiment, I need a strong serial baseline. It is not enough to write naive code; I wanted to see the maximum possible speed for a naive _algorithm_ on a single core.
 
-### Algorithm and Memory Logic
+#### Algorithm
 
-In my implementation, I used physical padding ($R=20$). By adding 20 pixels of padding around the image data before the timing starts, I removed all if statements from the inner convolution loop. This allows the CPU to process the data without branch mispredictions.I also optimized the math by replacing division with multiplication. A box filter needs to divide the sum by the kernel area ($1681$). Since division is a slow operation for the FPU, I pre-calculated the reciprocal ($1.0f / 1681.0f$) and used it as a multiplier. Over 20 billion operations, this makes a significant difference in throughput.
+In my implementation, I used physical padding ($R=20$). By adding 20 pixels of padding around the image data before the timing starts, I removed all if-statements from the inner convolution loop. This allows the CPU to process the data without branch mispredictions. I also optimized the math by replacing division with multiplication. A box filter needs to divide the sum by the kernel area ($1681$). Since division is a slow operation for the FPU, I pre-calculated the reciprocal ($1.0f / 1681.0f$) and used it as a multiplier.
 
-### Architecture and Cache
+#### Architecture and Cache
 
-My Ryzen 7535HS has 192 KiB of L1d cache. When the kernel slides across the image, it needs to access 41 rows at the same time. The padded width is 4072 bytes. The working set is $41 \text{ rows} \times 4072 \text{ bytes} \approx \mathbf{166.9 \text{ KiB}}$.This fits exactly into the 192 KiB L1d cache, leaving a small amount of room for other data. Because the original image width of 4032 is a multiple of 64 bytes, the rows align perfectly with the CPU cache lines and 256-bit AVX2 registers. This ensures the hardware prefetcher works efficiently.
+My Ryzen 5 7535HS has 192 KiB of L1d cache. When the kernel slides across the image, it needs to access 41 rows at the same time. The padded width is 4072 bytes. The working set is $41 \text{ rows} \times 4072 \text{ bytes} \approx \mathbf{166.9 \text{ KiB}}$. This fits exactly into the 192 KiB L1d cache, leaving a small amount of room for other data. Because the original image width of 4032 is a multiple of 64 bytes, the rows align perfectly with the CPU cache lines and 256-bit AVX2 registers. This ensures the hardware prefetcher works efficiently.
 
 While the total L1d for the 6-core complex is 192 KiB, each individual core manages a 32 KiB private L1d cache. With a working set of $\approx 166.9$ KiB for the 41-row sliding window, the data resides primarily in the 512 KiB private L2 cache. This confirms that the baseline's bottleneck is a combination of L1 misses and scalar instruction latency.
 
-### The Power of the "Basics": A 4x Speedup via Compilation Flags
+#### The Power of the "Basics": A 4x Speedup via Compilation Flags
 
-In high-performance software development, the distance between "working code" and "performant code" often starts at the compiler level. By moving away from a generic debug build and explicitly configuring a Release environment in CMake, I achieved a 3.5x performance boost—slashing execution time from 13.5 seconds down to just 3.8 seconds—without altering a single line of C++ logic. This optimization relied on a strategic combination of flags: `-O3` for aggressive vectorization, `-march=native` to unlock the specific SIMD instructions of my architecture, and `-ffast-math` to streamline calculations. For any engineer tasked with developing and configuring HPC engine components, this is a foundational step: *before implementing complex distributed patterns, we must first ensure the compiler is fully empowered to leverage the hardware*.
+In high-performance software development, the distance between "working code" and "performant code" often starts at the compiler level. By moving away from a generic debug build and explicitly configuring a Release environment in CMake, I achieved a 3.5x performance boost — from 13.5 seconds down to just 3.8 seconds — without altering a single line of C++ logic. This optimization relied on a strategic combination of flags: `-O3` for aggressive vectorization, `-march=native` to unlock the specific SIMD instructions of my architecture, and `-ffast-math` to streamline calculations. For any engineer tasked with developing and configuring HPC engine components, this is a foundational step: *before implementing complex distributed patterns, we must first ensure the compiler is fully empowered to leverage the hardware*.
 
-### The Efficiency Gap: Quantifying Untapped Potential
+#### Performance Evaluation
 
-The baseline serial implementation, processing a $4032 \times 3024$ image with a $41 \times 41$ kernel, retired the workload in 4567.8 ms. This yields a throughput of 4.49 GFLOPS. While the Arithmetic Intensity ($840$ FLOPs/Byte) suggests a compute-bound problem, the hardware efficiency of 3.08% indicates significant 'instruction starvation'—the core is waiting on scalar logic rather than saturating its SIMD vector units.
+The baseline serial implementation retired the workload in 4567.8 ms. This yields a throughput of 4.49 GFLOPS. While the Arithmetic Intensity ($840$ FLOPs/Byte) suggests a compute-bound problem, the hardware efficiency of 3.08% indicates significant 'instruction starvation' — the core is waiting on scalar logic rather than saturating its SIMD vector units.
 
 - **Elapsed Time**: 4568 ms
 - **Throughput ($G$)**: 4.49 GFLOPS
@@ -136,12 +133,14 @@ The baseline serial implementation, processing a $4032 \times 3024$ image with a
 
 ## Stage 1: Separable Convolution
 
-By refactoring the brute-force $O(K^2)$ convolution into a separable $O(2K)$ implementation, I achieved a 10x reduction in execution time, dropping from 3.8 seconds to just 0.38 seconds. Mathematically, the workload plummeted from $\approx 20.5$ billion operations to $\approx 1.0$ billion operations. However, this transition introduces what I call the "Efficiency Paradox": while the application is significantly faster for the end-user, the hardware utilization actually regressed. My baseline sustained 5.12 GFLOPS (3.5% of the 145.6 GFLOPS single-core peak), but the separable version dropped to 2.63 GFLOPS (1.81% efficiency).
+A separable convolution works by splitting a single 2D kernel (like a $K \times K$ matrix) into two smaller 1D kernels: one horizontal and one vertical. Instead of performing a heavy 2D calculation for every pixel, the algorithm first applies the horizontal 1D filter and then applies the vertical 1D filter to the result. Because these two passes are mathematically equivalent to the original 2D operation, the final image is the same, but the computational cost is significantly lower. Specifically, the complexity drops from $O(K^2)$ to $O(2K)$ operations per pixel, making the process much faster—especially as the filter size increases.
+
+This algorithm resulted in a 10x speedup, reducing execution time from 3.8 seconds to 0.38 seconds and cutting operations from 20.5 billion to 1.0 billion. While the code is faster, it highlights an "Efficiency Paradox": hardware utilization actually decreased. The baseline version achieved 5.12 GFLOPS (3.5% efficiency), while the faster version reached only 2.63 GFLOPS (1.81% efficiency).
 
 $$N_{ops} = (\text{Width} \times \text{Height}) \times (K + K) \approx 1 \text{ GFLOPs} $$
 $$GFLOPS = \frac{1 \text{ GFLOPs} }{0.38 \times 10^9} \approx \mathbf{2.631 \text{ GFLOPS}}$$
 
-The drop in GFLOPS highlights a fundamental shift in the bottleneck. In the brute-force version, the CPU was "compute-bound," performing 1,681 operations on every pixel loaded into the cache. By switching to a separable kernel, I reduced the arithmetic intensity so drastically that the bottleneck shifted toward the _Memory Wall_.
+This drop in GFLOPS shows a major change in the bottleneck. The first version was compute-bound because it did 1,681 operations for every pixel. With the separable kernel, the math is much easier. Now, the bottleneck is the Memory Wall. This means the CPU is now waiting for data from the RAM instead of working on calculations.
 
 While the Horizontal Pass is cache-friendly (Stride-1 access), the Vertical Pass is "cache-hostile." To sum vertical pixels, the CPU must jump across entire image rows (a Stride-$W$ access pattern). Because each row jump likely lands in a different cache line, the hardware is forced to load 64 bytes of data just to use a single 4-byte float. This low cache-line utilization and increased pressure on the L1/L2 caches mean the execution units are frequently stalled, waiting for data from memory. In the world of HPC, this 10x gain is a massive victory, but the 1.8% efficiency is a diagnostic signal: I have optimized the algorithm, and now I must optimize the data orchestration through vectorization and tiling.
 
@@ -149,7 +148,7 @@ The Vertical Pass is not only cache-hostile but also stresses the Translation Lo
 
 #### Performance Evaluation
 
-By transitioning to a Separable Convolution ($O(2K)$), the execution time plummeted to 703 ms, delivering an Effective Throughput of 29.13 GFLOPS. Interestingly, the Raw Throughput dropped to 1.45 GFLOPS. This highlights a classic HPC trade-off: while we drastically reduced the total operation count, we increased the memory pressure by introducing an intermediate 4-byte floating-point buffer. With the Arithmetic Intensity falling to 8.35 FLOPs/Byte, the implementation is no longer just limited by the instruction pipeline, but is now actively fighting the 'Memory Wall'.
+By transitioning to a Separable Convolution ($O(2K)$), the execution time dropped to 703 ms, delivering an Effective Throughput of 29.13 GFLOPS. Interestingly, the Raw Throughput decreased to 1.45 GFLOPS. This highlights a classic HPC trade-off: while we drastically reduced the total operation count, we increased the memory pressure by introducing an intermediate 4-byte floating-point buffer. With the Arithmetic Intensity falling to 8.35 FLOPs/Byte, the implementation is no longer just limited by the instruction pipeline, but is now actively fighting the 'Memory Wall'.
 
 - **Elapsed Time**: 703 ms
 - **Effective GFLOPS**: 29.13 GFLOPS - performance relative to the $K^2$ workload
@@ -165,7 +164,7 @@ In this stage, I transitioned from compiler-dependent code to manual AVX2 Intrin
 
 #### Overcoming the AVX2 Lane-Crossing Barrier
 
-The most significant challenge in the SIMD pipeline is the "Demotion" (converting float32 results back to uint8_t). In the AVX2 ISA, packing instructions like _mm256_packus_epi32 are lane-bound—they operate within the two isolated 128-bit halves of the register. Without intervention, a standard pack results in a "shuffled" output ($[0,1,4,5,2,3,6,7]$).
+The most significant challenge in the SIMD pipeline is the "Demotion" (converting float32 results back to uint8_t). In the AVX2 ISA, packing instructions like `_mm256_packus_epi32` are lane-bound — they operate within the two isolated 128-bit halves of the register. Without intervention, a standard pack results in a "shuffled" output ($[0,1,4,5,2,3,6,7]$).
 
 To maintain linear pixel order for the PGM format, I implemented a cross-lane permutation strategy:
 
@@ -178,11 +177,12 @@ To maintain linear pixel order for the PGM format, I implemented a cross-lane pe
 
 This kernel is specifically tuned for the AMD Ryzen 5 7535HS architecture:
 - _L1 Store-to-Load Forwarding_: By using a 32-byte aligned col_sums buffer, I facilitate seamless data handoffs. The CPU maintains enough "distance" between the update of a column sum and its next read to avoid costly pipeline stalls.
-- _L3 Cache Residency_: In previous stages, the 48.8 MB intermediate buffer forced the CPU to hit high-latency DRAM ($48.8\text{ MB} > 16\text{ MB L3}$). By tiling the workload to $\approx 3.1\text{ MB}$ per thread, the entire "hot" working set stays within the L3 cache, effectively "hiding" the memory wall.
+- _L3 Cache Residency_: In previous stages, the $48.8\text{ MB}$ intermediate buffer exceeded the $16\text{ MB}$ L3 cache. This caused the CPU to access high-latency DRAM. By tiling the workload to $\approx 3.1\text{ MB}$ per thread, the active working set stays within the L3 cache. This reduces the impact of memory latency.
 
 #### Performance Evaluation
 
-The final optimization stage—Manual AVX2 Intrinsics with a Sliding Sum—yields the most striking result of the project. Running on a single core, the execution time dropped to 110.2 ms, representing a 41.4x speedup over the baseline. 
+Manual AVX2 Intrinsics with a Sliding Sum yield the most striking result of the project. Running on a single core, the execution time dropped to 110.2 ms, representing a 41.4x speedup over the baseline.
+
 The implementation reaches an Effective Throughput of 185.99 GFLOPS. While this exceeds the hardware's theoretical FP32 peak of 145.6 GFLOPS, it is important to note that the Raw GFLOPS (actual instructions retired) is significantly lower ($\approx 0.88$ GFLOPS). This 'super-peak' is the result of the $O(1)$ algorithm doing significantly less math to achieve the same result as the $O(K^2)$ baseline.
 
 - **Elapsed Time**: 110 ms - single-threaded AVX2
@@ -193,26 +193,24 @@ The implementation reaches an Effective Throughput of 185.99 GFLOPS. While this 
 
 ## Stage 3: Scaling with 6 Physical Cores
 
-The next leap in this CPU optimization evolution moves from instruction-level saturation to thread-level parallelism via OpenMP. On the AMD Ryzen 5 7535HS, simply adding a `#pragma omp parallel` for isn't enough; true HPC performance requires a sophisticated orchestration of the Zen 3+ cache hierarchy to prevent the 6 physical cores from starving each other for data.
+The next stage is moving from instruction-level saturation to thread-level parallelism via OpenMP. On the AMD Ryzen 5 7535HS, simply adding a `#pragma omp parallel` for isn't enough; true HPC performance requires a sophisticated orchestration of the Zen 3+ cache hierarchy to prevent the 6 physical cores from starving each other for data.
 
 #### Tiling for L3 Cache Residency
 
 In previous stages, the intermediate _h_res_ buffer (approx. 48.8 MB) was too large for the 16 MB L3 cache, forcing the CPU to incur the "DRAM tax" on every read/write. In this multi-threaded version, I implemented a tiling strategy: 
 - _Thread-Local Workspaces_: Each of the 6 threads processes a horizontal "tile" of the image.
-- _The Math_: By limiting each thread’s intermediate tile_h_res and col_sums to $\approx 3.1$ MB, the total active working set across all cores is $\approx 18.6$ MB.
-- _The Result_: While slightly exceeding the 16 MB L3, this "near-resident" strategy ensures that the vast majority of intermediate data handoffs occur at cache speeds rather than memory speeds. We have effectively "shrunk" the image to fit the hardware's sweet spot.
+- _The Math_: By limiting each thread’s intermediate `tile_h_res` and `col_sums` to $\approx 3.1$ MB, the total active working set across all cores is $\approx 18.6$ MB.
+- _The Result_: Although the data slightly exceeds the $16\text{ MB}$ L3 cache, most data transfers happen at cache speeds rather than memory speeds. This method ensures the workload size fits the hardware capacity.
 
-#### Defeating False Sharing and Cache Ping-Pong
+#### Preventing False Sharing and Cache Invalidation
 
-A common pitfall in multi-threaded convolution is False Sharing, where threads inadvertently fight over the same 64-byte cache line. To ensure linear scaling, I enforced two strict architectural rules:
-- _Private Allocation_: By moving the allocation of `tile_h_res` and `col_sums` inside the `#pragma omp paralle`l block, each thread receives its own private, heap-allocated workspace.
-- _Explicit Alignment_: Every buffer is aligned to a 32-byte (256-bit) boundary. This ensures that vector loads/stores never straddle cache lines, preventing the hardware from triggering expensive "split-load" penalties or cache-coherency "ping-pong" between cores.
+A common problem in multi-threaded convolution is False Sharing. This happens when multiple threads access the same $64$-byte cache line at the same time. To ensure that performance scales linearly with the number of cores, I applied two technical rules:
+- _Private Allocation_: I moved the allocation of tile_h_res and col_sums inside the #pragma omp parallel block. This ensures that each thread has its own private workspace on the heap.
+- _Explicit Alignment_: I aligned every buffer to a $32$-byte ($256$-bit) boundary. This prevents vector operations from crossing the boundary between two cache lines. This stops the hardware from performing "split-loads" and eliminates unnecessary cache synchronization between CPU cores.
 
 #### Performance Evaluation
 
-The culmination of this optimization journey—Tiled AVX2 with 12-thread OpenMP parallelism—crosses the finish line at 24.6 ms. This delivers a staggering 185.7x total speedup over the serial baseline.
-
-Quantitatively, the implementation reaches an Effective Throughput of 833.17 GFLOPS, saturating 95.3% of the processor's theoretical ceiling. The transition from 110.2 ms (Single-Core AVX2) to 24.6 ms represents a 4.48x parallel scaling efficiency. At this stage, the bottleneck has shifted entirely from the instruction pipeline to the physical limits of the DDR5 memory bus. By utilizing cache-aware tiling, we've extracted nearly every drop of performance available from the Zen 3+ architecture, proving that even a mobile 'HS' processor can handle workstation-level geophysical workloads when the software is tuned to the silicon.
+The 6-thread Tiled AVX2 implementation takes 25.6 ms and reaches an Effective Throughput of 800.6 GFLOPS. 
 
 - **Elapsed Time**: 25.6 ms - 178.4x faster than baseline
 - **Effective GFLOPS**: 800.6 GFLOPS - 91.6% of total chip peak (873.6)
@@ -226,7 +224,9 @@ With a highly optimized $O(1)$ SIMD kernel established, the final bottleneck is 
 
 #### Performance Evaluation
 
-A critical finding emerged when comparing the performance across thread counts: the 6-thread Tiled AVX2 implementation clocked in at 25.6 ms, delivering an Effective Throughput of 800.63 GFLOPS. Interestingly, doubling the thread count to 12 (utilizing SMT) only yielded an additional 4% performance gain. This plateau confirms that the implementation has successfully saturated the physical core throughput and is now firmly bound by the system memory bandwidth. In this regime, the bottleneck is no longer how fast we can calculate, but how fast we can move pixel data across the memory bus. For an HPC architect, this 6-thread result represents the 'Sweet Spot'—maximum hardware efficiency ($91.6\%$) without the diminishing returns and thermal overhead of logical thread contention.
+The final version—Tiled AVX2 with 12-thread OpenMP—reaches an execution time of 24.6 ms. This is 185.7x faster than the serial baseline.
+
+The implementation achieves an Effective Throughput of 833.17 GFLOPS, which is 95.3% of the processor's theoretical maximum performance. The change from 110.2 ms (Single-Core AVX2) to 24.6 ms shows a parallel scaling efficiency of 4.48x. At this stage, the bottleneck has shifted from the instruction pipeline to the limits of the DDR5 memory bus. By using cache-aware tiling, the software utilizes almost all available performance of the Zen 3+ architecture. This proves that a mobile 'HS' processor can handle workstation-level geophysical workloads when the software is optimized for the hardware.
 
 - **Elapsed Time**: 24.6 ms - 185.7x faster than baseline
 - **Effective GFLOPS**: 833.17 GFLOPS - 95.3% of total chip peak (873.6)
@@ -234,10 +234,16 @@ A critical finding emerged when comparing the performance across thread counts: 
 - **Hardware Efficiency ($\eta_{hw}$)**: 0.45% - Raw ALU utilization (low due to $O(1)$)
 - **SMT Benefit**: ~4% - Comparison of 6 threads vs. 12 threads
 
+Increasing the thread count to 12 (using SMT) only improves performance by 4%. This shows that the code has reached the limit of the physical cores and is now limited by memory bandwidth. At this point, the bottleneck is no longer calculation speed, but the speed of data transfer across the memory bus.
+
+The 6-thread configuration is the most efficient choice. It achieves 91.6% hardware efficiency and avoids the extra heat and lower scaling caused by using 12 threads.
+
 
 ## The "Memory Wall" Stress Test
 
-The jump to 8K resolution ($7680 \times 5760$) serves as the ultimate stress test for the Zen 3+ cache hierarchy, forcing the dataset well beyond the 16 MiB L3 boundary of the Ryzen 5 7535HS. While the 4K dataset was small enough to remain largely cache-resident, the 8K workload requires a 44.2 MiB input and an intermediate floating-point buffer of approximately 176 MiB, effectively "breaking" the cache and exposing the implementation to the raw latency of the DDR5-4800 bus. This transition reveals the true Memory Wall: while the baseline execution time ballooned to 28,095.6 ms, the tiled AVX2 engine maintained a blistering 115.2 ms. Although the effective throughput dipped from a 4K peak of 833.2 GFLOPS to 645.5 GFLOPS, the ability to maintain 74% of the theoretical peak while operating deep in the DRAM-bound regime validates the robustness of our tiling strategy. This performance delta proves that once arithmetic complexity is minimized via $O(1)$ algorithms, the bottleneck shifts irrevocably from the silicon's arithmetic pipelines to the physics of data movement.
+This version removes all metaphors and uses the direct, literal style you prefer.8K Resolution PerformanceTesting with 8K resolution ($7680 \times 5760$) shows the limits of the Zen 3+ cache. The dataset at this resolution is much larger than the $16\text{ MiB}$ L3 cache of the Ryzen 5 7535HS. While the 4K data mostly stayed in the cache, the 8K workload requires a $44.2\text{ MiB}$ input and a $176\text{ MiB}$ intermediate buffer. This exceeds the cache size and requires the CPU to access the DDR5-4800 memory bus directly.
+
+The baseline execution time increased to 28,095.6 ms, but the tiled AVX2 version took only 115.2 ms. The effective throughput decreased from 833.2 GFLOPS (at 4K) to 645.5 GFLOPS. Reaching 74% of the theoretical maximum while being limited by DRAM proves that the tiling strategy is effective. This result shows that when $O(1)$ algorithms reduce the total operations, the bottleneck changes from the arithmetic units to memory bandwidth.
 
 #### Performace Evaluation
 
@@ -249,7 +255,9 @@ The jump to 8K resolution ($7680 \times 5760$) serves as the ultimate stress tes
 
 ## Scaling Up: Moving to MPI
 
-Scalability and the MPI FrontierWhile MPI is the logical trajectory for extreme scaling, it introduces a "distributed-memory tax" that offers no benefit on a single-socket mobile processor. Since the 8K stress test already saturated the DDR5 bandwidth, the overhead of halo exchanges would degrade performance compared to OpenMP’s zero-copy efficiency. MPI’s true value lies in weak scaling—partitioning multi-gigapixel datasets across a cluster when local RAM is no longer sufficient. For this hardware, the "architectural sweet spot" remains $O(1)$ manual SIMD paired with cache-aligned OpenMP tiling.
+MPI is the standard way to scale code across multiple computers, but it adds communication overhead that is not useful for a single mobile processor. Because the 8K test already used all the available DDR5 bandwidth, the extra data transfers required by MPI (halo exchanges) would reduce performance compared to the current OpenMP version.
+
+MPI is useful for "weak scaling," where very large datasets are split across a cluster because they do not fit in the RAM of one machine. For this laptop hardware, the most effective method is using manual SIMD with cache-aligned OpenMP tiling.
 
 ## Performance Results: CPU vs. GPU
 
@@ -287,3 +295,7 @@ This project proves that standard hardware can do amazing things if you tune the
 The Ryzen 5 7535HS features 6 physical cores and 12 logical threads via Simultaneous Multithreading (SMT). In many general-purpose workloads, SMT provides a 20-30% performance boost by filling pipeline bubbles. However, in an HPC-heavy AVX2 workload, SMT can become a liability.
 
 Because each physical core shares its Execution Units (ALUs) and SIMD ports between two logical threads, running 12 threads on this specific kernel causes "resource contention." When two threads on the same core both attempt to execute 256-bit FMA (Fused Multiply-Add) instructions, they fight for the same hardware ports, leading to stalls and increased cache pressure.
+
+---
+
+While the box filter could be implemented using 16-bit integer SIMD to double throughput, I utilized FP32 to maintain compatibility with complex kernels (like Gaussian blurs) and to allow for normalization without precision loss during intermediate stages.
