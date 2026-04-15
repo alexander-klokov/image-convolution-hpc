@@ -79,7 +79,7 @@ For this experiment, I am using a *6-core, 12-thread Zen 3+* mobile processor. A
 - _Cache Architecture_: L1: 384 KiB (32 KiB L1i + 32 KiB L1d per core) private; L2: 3 MiB (512 KiB per core) private; L3: 16 MiB Unified. The L1 data cache provides ultra-low latency access for immediate kernel coefficients and local pixel values during tight execution loops. This hierarchy is complemented by the shared L3 pool, which is vital for image processing as it allows efficient data reuse for sliding-window operations and tile-based threading without frequent trips to RAM.
 - _Vectorization (SIMD)_: Support for AVX2 (256-bit vectors) and FMA ($a = b \times c + d$). These instructions are the primary engine for convolution, allowing up to 32 single-precision operations per cycle per core.
 
-_Need: I'm running on WSL2 (Microsoft Hypervisor). While it provides near-native execution speeds, the virtualization layer can subtly influence memory management and low-level performance counters during profiling._
+_Note: I'm running on WSL2 (Microsoft Hypervisor). While it provides near-native execution speeds, the virtualization layer can subtly influence memory management and low-level performance counters during profiling._
 
 ## Performance Metrics
 
@@ -183,7 +183,7 @@ _IPC Degradation_: The IPC dropped from 3.61 to 2.80. The stalls aren't coming f
 
 ## Stage 2: Sliding Sum
 
-Next, I apply a Sliding Window algorithm. Instead of re-summing all $K$ pixels for every new position, this algorithm takes the sum from the previous pixel, subtracts the one pixel leaving the window, and adds the one pixel entering it. This reduces the workload to a constant two operations per pixel, making it independent on the kernel size. By maintaining a "running sum" of columns, I reduced the work per pixel from $O(2K)$ to a constant $O(1)$ operations.
+Next, I apply a Sliding Window algorithm. Instead of re-summing all $K$ pixels for every new position, this algorithm takes the sum from the previous pixel, subtracts the one pixel leaving the window, and adds the one pixel entering it. This reduces the workload to a constant two operations per pixel, making it independent of the kernel size. By maintaining a "running sum" of columns, I reduced the work per pixel from $O(2K)$ to a constant $O(1)$ operations.
 
 - **Elapsed Time**: 58.4 ms
 - **Hardware Efficiency** ($\eta_{hw}$): 241%
@@ -370,7 +370,7 @@ The Arithmetic Intensity didn't change because the math/data ratio stayed the sa
 
 - _The Cluster (Blue/Purple)_: These represent the 6-thread and 12-thread runs. They are grouped at the very top, showing that while SMT (12 threads) didn't give me much more raw speed, the move to parallel execution pushed me into the Teraflop-equivalency range.
 
-- _The 8K Outlier (Black)_: Notice how it shifted back to the left (lower AI) compared to the 4K parallel runs. This is the visual representation of the latency limit. At 8K resolution, the data exceeds the L3 cache, increasing the "DRAM tax." Even though it's shifted left into the memory-bound slope, its "Effective Performance" remains high because the $O(1)$ math is still saving you from a total collapse.
+- _The 8K Outlier (Black)_: Notice how it shifted back to the left (lower AI) compared to the 4K parallel runs. This is the visual representation of the latency limit. At 8K resolution, the data exceeds the L3 cache, increasing the "DRAM tax." Even though it's shifted left into the memory-bound slope, its "Effective Performance" remains high because the $O(1)$ math is still saving me from a total collapse.
 
 ## Scaling Up: Moving to MPI
 
@@ -400,7 +400,7 @@ I started with a basic $O(K^2)$ code and improved it until it became a fast, til
 
 #### Key Lessons
 
-- _Smart Math Beats Raw Power_: Moving to an $O(1)$ algorithm was our biggest win. It allowed one CPU core to act like a much more powerful processor. It reminds us that the best way to save time is _to remove unnecessary calculations_.
+- _Smart Math Beats Raw Power_: Moving to an $O(1)$ algorithm was my biggest win. It allowed one CPU core to act like a much more powerful processor. It reminds us that the best way to save time is _to remove unnecessary calculations_.
 
 - _Cache is King_: On modern CPUs, the biggest problem is usually not the math, but moving data. By using "tiling," I kept my data inside the fast L3 cache. This prevented the slow RAM from slowing me down.
 
