@@ -10,7 +10,7 @@ KERNEL_ID = $(strip $(if $(RUN_ARGS),$(RUN_ARGS),0))
 
 # ------------------------------------------------
 
-.PHONY: build run see clean
+.PHONY: build run see clean profile
 
 # executables
 BUILD_DIR = build
@@ -34,12 +34,9 @@ run: build
 	@echo "========================================"
 	./$(BUILD_DIR)/$(EXEC) $(INPUT) $(OUTPUT) $(KERNEL_ID)
 
-runmpi: build
-	@mkdir -p output
-	@echo "========================================"
-	@echo "Executing Kernel ID: $(KERNEL_ID)"
-	@echo "========================================"
-	mpirun -np 6 --bind-to core ./$(BUILD_DIR)/$(EXEC_MPI) $(INPUT) $(OUTPUT)
+# profile the target kernel
+profile:
+	perf stat -d ./$(BUILD_DIR)/$(EXEC) $(INPUT) $(OUTPUT) $(KERNEL_ID)
 
 # open the blurred image
 see:
