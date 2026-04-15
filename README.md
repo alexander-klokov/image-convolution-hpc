@@ -15,7 +15,7 @@
 * [Stage 3: Manual SIMD](#stage-3-manual-simd)
 * [Stage 4: Scaling with 6 Physical Cores](#stage-4-scaling-with-6-physical-cores)
 * [Stage 5: Testing 12 Threads with SMT](#stage-5-testing-12-threads-with-smt)
-* [The "Memory Wall" Stress Test](#the-memory-wall-stress-test)
+* [The Memory Latency Stress Test](#the-memory-latency-stress-test)
 * [Roofline model](#roofline-model)
 * [Scaling Up: Moving to MPI](#scaling-up-moving-to-mpi)
 * [Performance Results: CPU vs. GPU](#performance-results-cpu-vs-gpu)
@@ -299,7 +299,7 @@ _The IPC "Collapse"_: The IPC dropped from 1.15 to 0.61. This isn't a sign of ba
 
 _Cache Residency Remains Robust_: L1 miss rate (6.52%) and Page Faults (30,542) remain stable. This proves my tiling strategy is robust; even with double the threads, the working set is still successfully residing in the 16 MiB L3 cache.
 
-## ## The Memory Latency Stress Test
+## The Memory Latency Stress Test
 
 Testing with 8K resolution ($7680 \times 5760$) shows the limits of the Zen 3+ cache. The dataset at this resolution is much larger than the $16\text{ MiB}$ L3 cache. While the 4K data mostly stayed in the cache, the 8K workload requires a $44.2\text{ MiB}$ input and a $176\text{ MiB}$ intermediate buffer. This exceeds the cache size, exposing the latency of direct DDR5-4800 memory bus access.
 
