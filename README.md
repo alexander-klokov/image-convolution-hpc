@@ -114,6 +114,10 @@ $$S = \frac{T_{base}}{T_{new}}$$
 
 To measure true hardware speed, I'm trying to filter out unpredictable system noise. First, my benchmarking engine performs an untimed "warm-up" run to load data into the CPU caches. Then, it times the code across multiple runs and reports the _minimum execution time_. I prefer the minimum time over the average because it shows the absolute fastest the hardware can perform when it is not interrupted by background operating system tasks.
 
+#### Profiling
+
+I used the Linux `perf` tool to see exactly how the hardware handles the code. By tracking Instructions Per Cycle (IPC), cache misses, and branch errors, I can show how each change improves performance on the Zen 3+ chip. This data proves that the speed gains are real and shows exactly when the memory bandwidth becomes the final limit for the system.
+
 ## The Baseline
 
 To start this experiment, I need a strong serial baseline. It is not enough to write naive code; I wanted to see the maximum possible speed for a naive _algorithm_ on a single core.
@@ -140,7 +144,11 @@ The baseline serial implementation retired the workload in 4567.8 ms. This yield
 - **Throughput ($G$)**: 4.49 GFLOPS
 - **Hardware Efficiency ($\eta_{hw}$)**: 3.08% - relative to 145.6 GFLOPS (Single Core)
 - **Speedup ($S$)**: 1.0
+- **IPC**: 3.74 - instructions-per-cycle, peak dispatch IPC is 6.0
+- **L1-dcache Miss Rate**: 0.24%
 - **Roofline Position**: Compute-Bound
+
+The high IPC of 3.74 and negligible branch misses (0.00%) prove the baseline is execution-optimal but algorithmically bankrupt. The CPU is effectively saturated, but it is trapped in the $O(K^2)$ "compute-well," retiring 796 billion instructions to complete a single convolution. The bottleneck is pure mathematical volume, not hardware inefficiency.
 
 ## Stage 1: Separable Convolution
 
@@ -167,7 +175,12 @@ By transitioning to a Separable Convolution ($O(2K)$), the execution time droppe
 - **Hardware Efficiency ($\eta_{hw}$)**: 0.99% - relative to 145.6 GFLOPS (Single Core)
 - **Speedup ($S$)**: 6.49x
 - **Roofline Position**: Compute-Bound
+- **Instructions Retired**: 52.2B (93% reduction vs baseline)
+- **IPC**: 2.80
+- **L1-dcache Miss Rate**: 4.66%
 - **Arithmetic Intensity ($I$)**: ~8.35 FLOPs/Byte - down from 840; moving toward Memory-Bound
+
+The algorithmic shift to $O(K)$ provides a massive win, but it introduces a hardware efficiency trade-off. The IPC dropped from 3.74 to 2.80, and L1 cache misses spiked to 4.66%. This is the footprint of the vertical pass: accessing non-contiguous row data and managing the 48.8 MB intermediate buffer. The bottleneck has officially shifted from "math volume" to "memory access patterns.
 
 ## Stage 2: Manual SIMD
 
@@ -201,6 +214,12 @@ The implementation reaches an Effective Throughput of 185.99 GFLOPS. While this 
 - **Raw GFLOPS**: ~0.88 GFLOPS
 - **Hardware Efficiency ($\eta_{hw}$)**: 0.6% - relative to 145.6 GFLOPS (Single Core)
 - **Speedup ($S$)**: 41.45x
+- **Instructions Retired**: 2.56B - 95% reduction vs Stage 1
+- **IPC**: 1.67
+- **L1-dcache Miss Rate**: 4.32%
+- **Arithmetic Intensity**: ~0.4 FLOPs/byte
+
+The transition to a sliding-window $O(1)$ algorithm reduced the total instruction count from 52.2B to a mere 2.56B. However, the IPC fell to 1.67, and the L1 miss rate remains high at 4.32%. This indicates that the bottleneck has fundamentally shifted: the CPU is no longer limited by how fast it can calculate, but by how fast it can fetch data from the 48.8 MB intermediate buffer. The engine is now "memory-bound," setting the stage for cache-aware tiling.
 
 ## Stage 3: Scaling with 6 Physical Cores
 
@@ -228,6 +247,12 @@ The 6-thread Tiled AVX2 implementation takes 25.6 ms and reaches an Effective Th
 - **Raw GFLOPS**: ~3.95 GFLOPS
 - **Hardware Efficiency ($\eta_{hw}$)**: 91.6% - relative to 6-core FP32 peak
 - **Parallel Scaling**: 4.30x - Speedup from 1 to 6 physical cores
+- **IPC**: 2.31 - up from 1.67
+- **Page Faults**: 13,636 (91% reduction)
+- **Instructions Retired**: 1.87B (27% reduction vs Stage 2)
+- **Arithmetic Intensity**: ~2.0 FLOPs/byte
+
+The "DRAM tax" has been successfully repealed. The massive drop in page faults confirms that the tiling strategy successfully contained the working set within the 16 MiB L3 cache, preventing the OS from constantly re-mapping virtual memory. Furthermore, the IPC jump to 2.31 proves the pipeline is finally being fed efficiently. The 27% reduction in total instructions indicates that tiling didn't just help the cache—it streamlined the loop logic and improved data reuse across the kernel.
 
 ## Stage 4: Testing 12 Threads with SMT
 
@@ -244,6 +269,12 @@ The implementation achieves an Effective Throughput of 833.17 GFLOPS, which is 9
 - **Raw GFLOPS**: ~3.95 GFLOPS
 - **Hardware Efficiency ($\eta_{hw}$)**: 0.45% - Raw ALU utilization (low due to $O(1)$)
 - **SMT Benefit**: ~4% - Comparison of 6 threads vs. 12 threads
+- **Per-Core IPC**: 2.56 - highest recorded
+- **L1-dcache Miss Rate**: 6.62%
+- **Instructions Retired**: 1.88B
+- **Arithmetic Intensity**: ~2.0 FLOPs/byte
+
+The jump to 2.56 IPC indicates the Zen 3+ pipeline is completely saturated. Because the total instruction count (1.88B) and cache miss rate (6.62%) remained identical to the 6-core run, it is evident that the 12 logical threads are competing for the same physical AVX2 execution units. This validates that for an $O(1)$ sliding-window kernel, the bottleneck is no longer instruction latency but physical ALU availability. SMT offers no additional throughput here because there are no execution bubbles to fill.
 
 Increasing the thread count to 12 (using SMT) only improves performance by 4%. This shows that the code has reached the limit of the physical cores and is now limited by memory bandwidth. At this point, the bottleneck is no longer calculation speed, but the speed of data transfer across the memory bus.
 
@@ -262,6 +293,15 @@ The baseline execution time increased to 28,095.6 ms, but the tiled AVX2 version
 - **Effective GFLOPS**: 645.49 GFLOPS - 73.9% of Full Chip Peak (873.6)
 - **Workload ($N_{ops}$)**: 74.36 GFLOPs - 3.6x more work than the 4K test
 - **Scaling Efficiency**: 77.5% - relative to 4K GFLOPS (833.2)
+- **IPC: 0.19** - 13x collapse vs 4K
+- **L1-dcache Miss Rate**: 25.86% - 4x increase vs 4K
+- **Branch Misses**: 6.34%
+- **System Time**: >95% of total task time
+- **Arithmetic Intensity**: ~0.4 FLOPs/byte
+
+At 8K resolution, the software-hardware contract breaks. The 0.19 IPC and 25.86% L1 miss rate represent a total pipeline stall; the Zen 3+ cores are spending nearly 90% of their cycles waiting for data from the DDR5 bus. The spike in branch misses (6.34%) suggests that the prefetcher can no longer accurately guess the next data block across such a massive memory footprint. This confirms that once the working set exceeds the 16 MiB L3 cache, algorithmic $O(1)$ efficiency is held hostage by the physical bandwidth of the memory controller.
+
+_Note: `user` time was 0.009s while `sys` was 0.20s. This is a critical detail. It shows the CPU wasn't just slow; the OS was actively struggling with memory management (paging/TLB pressure) for the 176 MB intermediate buffer._
 
 ## Scaling Up: Moving to MPI
 

@@ -15,29 +15,36 @@ points = [
         "marker": "o",
     },
     {
-        "name": "Separable O(2K)",
+        "name": "(1) Separable O(2K)",
         "ai": 8.35,
         "gflops": 29.13,
         "color": "orange",
         "marker": "o",
     },
     {
-        "name": "Manual SIMD O(1)",
-        "ai": 840,
-        "gflops": 186.0,
+        "name": "(2) Manual SIMD O(1)",
+        "ai": 0.4,
+        "gflops": 186,
+        "color": "yellow",
+        "marker": "o",
+    },
+    {
+        "name": "(3) 6-Thread Tiled (4K input)",
+        "ai": 2.0,
+        "gflops": 800,
         "color": "green",
         "marker": "o",
     },
     {
-        "name": "12-Thread Tiled (4K input)",
-        "ai": 840,
+        "name": "(4) 12-Thread Tiled (4K input)",
+        "ai": 2.0,
         "gflops": 833.17,
         "color": "blue",
         "marker": "o",
     },
     {
         "name": "12-Thread Tiled (8K input)",
-        "ai": 840,
+        "ai": 0.4,
         "gflops": 645.49,
         "color": "purple",
         "marker": "o",
@@ -93,7 +100,9 @@ plt.text(
 )
 plt.text(18, 700, "COMPUTE-BOUND", color="gray", fontsize=11, fontweight="bold")
 
-plt.legend(loc="upper left", frameon=True, fontsize=10)
+
+plt.legend(loc="upper right", bbox_to_anchor=(1.0, 0.95), frameon=True, fontsize=10)
+
 plt.tight_layout()
 plt.savefig("../assets/convolution_roofline.png", dpi=300)
 plt.show()
