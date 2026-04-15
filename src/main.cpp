@@ -53,12 +53,15 @@ int main(int argc, char *argv[])
         run_benchmark("Separable Convolution", NUM_RUNS, convolution_separable, padded, output.data, img.width, img.height, Wp, K, inv_area);
         break;
     case 2:
-        run_benchmark("Vertical SIMD Sliding Sum", NUM_RUNS, convolution_vertical_simd_sliding, padded, output.data, img.width, img.height, Wp, K, inv_area);
+        run_benchmark("Sliding Window", NUM_RUNS, convolution_sliding_window, padded, output.data, img.width, img.height, Wp, K, inv_area);
         break;
     case 3:
-        run_benchmark("Tiled AVX2 (6 threads)", NUM_RUNS, convolution_tiled_avx2_threads_06, padded, output.data, img.width, img.height, Wp, K, inv_area);
+        run_benchmark("Sliding Window + AVX2", NUM_RUNS, convolution_sliding_window_avx2, padded, output.data, img.width, img.height, Wp, K, inv_area);
         break;
     case 4:
+        run_benchmark("Tiled AVX2 (6 threads)", NUM_RUNS, convolution_tiled_avx2_threads_06, padded, output.data, img.width, img.height, Wp, K, inv_area);
+        break;
+    case 5:
         run_benchmark("Tiled AVX2 (12 threads)", NUM_RUNS, convolution_tiled_avx2_threads_12, padded, output.data, img.width, img.height, Wp, K, inv_area);
         break;
     default:

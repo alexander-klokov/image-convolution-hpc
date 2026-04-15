@@ -19,11 +19,11 @@ add_executable(convolution_benchmark
     src/benchmark.cpp
     src/kernels/00_convolution_baseline.cpp
     src/kernels/01_convolution_separable.cpp
-    src/kernels/02_convolution_vertical_simd_sliding.cpp
-    src/kernels/03_convolution_tiled_avx2_threads_06.cpp
-    src/kernels/04_convolution_tiled_avx2_threads_12.cpp
+    src/kernels/02_convolution_sliding_window.cpp
+    src/kernels/03_convolution_sliding_window_avx2.cpp
+    src/kernels/04_convolution_tiled_avx2_threads_06.cpp
+    src/kernels/05_convolution_tiled_avx2_threads_12.cpp
 )
-
 
 target_include_directories(convolution_benchmark PRIVATE include)
 target_compile_options(convolution_benchmark PRIVATE 
@@ -31,6 +31,9 @@ target_compile_options(convolution_benchmark PRIVATE
     -march=native # to use every instruction set your Ryzen supports (like AVX2 and FMA)
     -ffast-math   # to ignore strict IEEE floating-point rules to perform faster calculations
 )
+if(OpenMP_CXX_FOUND)
+    target_link_libraries(convolution_benchmark PUBLIC OpenMP::OpenMP_CXX)
+endif()
 
 # Make the compiler optimize across different files (LTO)
 include(CheckIPOSupported)
