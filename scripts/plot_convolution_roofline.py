@@ -9,44 +9,58 @@ peak_bw = 76.8  # GB/s (DDR5-4800 Dual Channel)
 points = [
     {
         "name": "Baseline O(K^2)",
-        "ai": 840,
-        "gflops": 4.49,
+        "ai": 840.5,
+        "gflops": 4.28,
         "color": "red",
-        "marker": "o",
+        "marker": "s",
     },
     {
         "name": "(1) Separable O(2K)",
         "ai": 8.35,
-        "gflops": 29.13,
+        "gflops": 45.46,
         "color": "orange",
         "marker": "o",
     },
     {
-        "name": "(2) Manual SIMD O(1)",
+        "name": "(2) Sliding Window O(1)",
         "ai": 0.4,
-        "gflops": 186,
+        "gflops": 350.96,
         "color": "yellow",
         "marker": "o",
     },
     {
-        "name": "(3) 6-Thread Tiled (4K input)",
-        "ai": 2.0,
-        "gflops": 800,
+        "name": "(3) AVX2",
+        "ai": 0.4,
+        "gflops": 448.49,
         "color": "green",
         "marker": "o",
     },
     {
-        "name": "(4) 12-Thread Tiled (4K input)",
+        "name": "(4) 6-Thread Tiled",
         "ai": 2.0,
-        "gflops": 833.17,
+        "gflops": 3595.79,
         "color": "blue",
         "marker": "o",
     },
     {
-        "name": "12-Thread Tiled (8K input)",
-        "ai": 0.4,
-        "gflops": 645.49,
+        "name": "(5) 12-Thread Tiled",
+        "ai": 2.0,
+        "gflops": 3660.0,
         "color": "purple",
+        "marker": "o",
+    },
+    {
+        "name": "8K: Baseline",
+        "ai": 840.5,
+        "gflops": 5.29,
+        "color": "black",
+        "marker": "s",
+    },
+    {
+        "name": "8K: 12-Thread Tiled",
+        "ai": 0.4,
+        "gflops": 3852.96,
+        "color": "black",
         "marker": "o",
     },
 ]
@@ -74,8 +88,7 @@ for p in points:
         p["name"],
         (p["ai"], p["gflops"]),
         textcoords="offset points",
-        xytext=(0, 10),
-        ha="center",
+        xytext=(10, 0),
         fontsize=9,
         fontweight="bold",
     )
@@ -96,12 +109,12 @@ plt.axhline(y=peak_perf, color="red", linestyle="--", alpha=0.4, label="Peak FP3
 
 # Label Regions
 plt.text(
-    0.2, 12, "MEMORY-BOUND", rotation=52, color="gray", fontsize=11, fontweight="bold"
+    3.3, 200, "MEMORY-BOUND", rotation=45, color="gray", fontsize=11, fontweight="bold"
 )
 plt.text(18, 700, "COMPUTE-BOUND", color="gray", fontsize=11, fontweight="bold")
 
 
-plt.legend(loc="upper right", bbox_to_anchor=(1.0, 0.95), frameon=True, fontsize=10)
+plt.legend(loc="upper right", bbox_to_anchor=(1.0, 0.75), frameon=True, fontsize=10)
 
 plt.tight_layout()
 plt.savefig("../assets/convolution_roofline.png", dpi=300)
