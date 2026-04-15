@@ -368,9 +368,13 @@ Points (2) through (5) and the 8K input are all floating above the Hardware Roof
 
 The Arithmetic Intensity didn't change because the math/data ratio stayed the same, but the Effective Performance shot up because I used SIMD to retire those few remaining instructions much faster.
 
-- _The Cluster (Blue/Purple)_: These represent the 6-thread and 12-thread runs. They are grouped at the very top, showing that while SMT (12 threads) didn't give me much more raw speed, the move to parallel execution pushed me into the Teraflop-equivalency range.
+#### The Cluster (Blue/Purple)
 
-- _The 8K Outlier (Black)_: Notice how it shifted back to the left (lower AI) compared to the 4K parallel runs. This is the visual representation of the latency limit. At 8K resolution, the data exceeds the L3 cache, increasing the "DRAM tax." Even though it's shifted left into the memory-bound slope, its "Effective Performance" remains high because the $O(1)$ math is still saving me from a total collapse.
+These represent the 6-thread and 12-thread runs. They are grouped at the very top, showing that while SMT (12 threads) didn't give me much more raw speed, the move to parallel execution pushed me into the Teraflop-equivalency range.
+
+#### The 8K Outlier (Black)
+
+Notice how it shifted back to the left (lower AI) compared to the 4K parallel runs. This is the visual representation of the latency limit. At 8K resolution, the data exceeds the L3 cache, increasing the "DRAM tax". Even though it's shifted left into the memory-bound slope, its "Effective Performance" remains high because the $O(1)$ math is still saving me from a total collapse.
 
 ## Scaling Up: Moving to MPI
 
