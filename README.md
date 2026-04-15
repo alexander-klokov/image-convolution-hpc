@@ -150,13 +150,13 @@ The baseline serial implementation retired the workload in 4794 ms. This yields 
 - **Elapsed Time**: 4794 ms
 - **Hardware Efficiency** ($\eta_{hw}$): 2.94%
 - **IPC**: 3.61
-- **Instructions Retired**: 796 billion
+- **Instructions Retired**: 796 Billion
 - **L1-dcache Miss Rate**: 0.27%
 - **Effective Throughput ($G$)**: 4.28 GFLOPS
 - **Arithmetic Intensity ($I$)**: 840.5 FLOPs/Byte
 - **Speedup ($S$)**: 1.00x
 
-_The Compute Well_: Despite the hardware being highly utilized, the efficiency ($\eta_{hw}$) is only 2.94%. This "Efficiency Paradox" occurs because the CPU is doing exactly what it was told to do — retiring nearly 800 billion instructions — but those instructions are mostly scalar math that could be vectorized.
+_The Compute Well_: Despite the hardware being highly utilized, the efficiency ($\eta_{hw}$) is only 2.94%. This "Efficiency Paradox" occurs because the CPU is doing exactly what it was told to do — retiring nearly 800 Billion instructions — but those instructions are mostly scalar math that could be vectorized.
 
 _Memory Impact_: With an L1-dcache miss rate of only 0.27%, the working set fits perfectly within the cache hierarchy. I am not yet limited by the "Memory Wall"; I am limited by the raw volume of mathematical operations required by the $O(K^2)$ algorithm.
 
@@ -169,7 +169,7 @@ By transitioning to a Separable Convolution ($O(2K)$), the execution time droppe
 - **Elapsed Time**: 451 ms
 - **Hardware Efficiency** ($\eta_{hw}$): 1.52%
 - **IPC**: 2.80
-- **Instructions Retired**: 52.33 billion
+- **Instructions Retired**: 52.33 Billion
 - **L1-dcache Miss Rate**: 4.72%
 - **Effective Throughput ($G$)**: 45.46 GFLOPS
 - **Arithmetic Intensity ($I$)**: 8.35 FLOPs/Byte
@@ -188,7 +188,7 @@ Next, I apply a Sliding Window algorithm. Instead of re-summing all $K$ pixels f
 - **Elapsed Time**: 58.4 ms
 - **Hardware Efficiency** ($\eta_{hw}$): 241%
 - **IPC**: 2.17
-- **Instructions Retired**: 3.03 billion
+- **Instructions Retired**: 3.03 Billion
 - **L1-dcache Miss Rate**: 3.39%
 - **Effective Throughput ($G$)**: 350.96 GFLOPS
 - **Arithmetic Intensity ($I$)**: ~0.4 FLOPs/Byte - drastic drop due to $O(1)$ operation count
@@ -230,7 +230,7 @@ This implementation reaches an Effective Throughput of 448.49 GFLOPS. While this
 - **Arithmetic Intensity ($I$)**: ~0.4 FLOPs/Byte
 - **Speedup ($S$)**: 104.90x
 
-_Instruction Density Win_: Moving to AVX2 cut MY instruction count from 3.03 Billion (Stage 2) down to 1.48 Billion. This is the direct result of processing 8 pixels per instruction. However, my IPC stayed relatively flat (2.17 to 2.10). This indicates that the CPU isn't stalled by instruction volume, but by the latency of the cross-lane shuffles and data dependencies required to maintain the sliding sum logic.
+_Instruction Density Win_: Moving to AVX2 cut my instruction count from 3.03 Billion (Stage 2) down to 1.48 Billion. This is the direct result of processing 8 pixels per instruction. However, my IPC stayed relatively flat (2.17 to 2.10). This indicates that the CPU isn't stalled by instruction volume, but by the latency of the cross-lane shuffles and data dependencies required to maintain the sliding sum logic.
 
 _The "Cache Tax"_: My L1-dcache miss rate doubled from 3.39% to 8.60%. As the execution speed increases (thanks to SIMD), the hardware prefetcher has less time to "stay ahead" of the vertical pass jumps. I am now retiring instructions so fast that the L1 cache can no longer act as a perfect buffer, forcing more frequent stalls for L2/L3 data fetches.
 
@@ -295,7 +295,7 @@ _Diminishing Returns_: Moving from 6 threads to 12 threads only shaved 0.1 ms of
 
 _The IPC "Collapse"_: The IPC dropped from 1.15 to 0.61. This isn't a sign of bad code; it's a measurement artifact of SMT. Since two logical threads now share one physical core, they are frequently stalling each other. The 5.48% frontend stall (double the 6-thread run) shows the hardware is struggling to dispatch instructions to the already-busy ALUs.
 
-+Instruction Bloat_: Instructions retired increased by ~130 million compared to the 6-thread run. This is the "SMT Tax" — the extra work the CPU must do to manage context switching and synchronization between 12 logical workers on a 6-core chip.
+_Instruction Bloat_: Instructions retired increased by ~130 million compared to the 6-thread run. This is the "SMT Tax" — the extra work the CPU must do to manage context switching and synchronization between 12 logical workers on a 6-core chip.
 
 _Cache Residency Remains Robust_: L1 miss rate (6.52%) and Page Faults (30,542) remain stable. This proves my tiling strategy is robust; even with double the threads, the working set is still successfully residing in the 16 MiB L3 cache.
 
