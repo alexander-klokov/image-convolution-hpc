@@ -56,13 +56,13 @@ int main(int argc, char *argv[])
         run_benchmark("Sliding Window", NUM_RUNS, convolution_sliding_window, padded, output.data, img.width, img.height, Wp, K, inv_area);
         break;
     case 3:
-        run_benchmark("Sliding Window + AVX2", NUM_RUNS, convolution_sliding_window_avx2, padded, output.data, img.width, img.height, Wp, K, inv_area);
+        run_benchmark("AVX2", NUM_RUNS, convolution_sliding_window_avx2, padded, output.data, img.width, img.height, Wp, K, inv_area);
         break;
     case 4:
-        run_benchmark("Tiled AVX2 (6 threads)", NUM_RUNS, convolution_tiled_avx2_threads_06, padded, output.data, img.width, img.height, Wp, K, inv_area);
+        run_benchmark("Tiled AVX2 Multi-Threaded, 6 threads", NUM_RUNS, convolution_tiled_avx2_threads_06, padded, output.data, img.width, img.height, Wp, K, inv_area);
         break;
     case 5:
-        run_benchmark("Tiled AVX2 (12 threads)", NUM_RUNS, convolution_tiled_avx2_threads_12, padded, output.data, img.width, img.height, Wp, K, inv_area);
+        run_benchmark("Tiled AVX2 Multi-Threaded, all 12 threads", NUM_RUNS, convolution_tiled_avx2_threads_12, padded, output.data, img.width, img.height, Wp, K, inv_area);
         break;
     default:
         std::cerr << "Error: Invalid kernel ID (" << kernel_id << ").\n";

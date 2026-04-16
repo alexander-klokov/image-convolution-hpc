@@ -5,6 +5,7 @@
 #include "convolutions.h"
 #include "image_utils.h"
 
+// 5: Tiled AVX2 Multi-Threaded, all 12 threads)
 void convolution_tiled_avx2_threads_12(
     const std::vector<uint8_t> &padded,
     std::vector<uint8_t> &output_data,

@@ -2,6 +2,7 @@
 
 #include "convolutions.h"
 
+// Naive Implementation: Separable Convolution - O(W * H * K^2)
 void convolution_baseline(
     const std::vector<uint8_t> &padded,
     std::vector<uint8_t> &output_data,

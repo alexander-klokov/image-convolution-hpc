@@ -1,8 +1,8 @@
 #include "convolutions.h"
 #include <vector>
 
-// Stage 2 Optimization: Separable Convolution with Sliding Window
-// Complexity: O(W * H * 2) - Independent of kernel size K
+// Stage 2: Sliding Window
+// Complexity: O(W * H * 2)
 void convolution_sliding_window(
     const std::vector<uint8_t> &padded,
     std::vector<uint8_t> &output_data,

@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <immintrin.h>
 
-// Stage 3 Optimization: Separable Convolution + Sliding Window + AVX2
+// Stage 3: AVX2
 // Complexity: O(W * H * 2), heavily vectorized vertical pass.
 void convolution_sliding_window_avx2(
     const std::vector<uint8_t> &padded,

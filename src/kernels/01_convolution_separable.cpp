@@ -1,6 +1,6 @@
 #include "convolutions.h"
 
-// Stage 1 Optimization: Separable Convolution
+// Stage 1: Separable Convolution
 // Complexity: O(W * H * 2K)
 void convolution_separable(
     const std::vector<uint8_t> &padded,

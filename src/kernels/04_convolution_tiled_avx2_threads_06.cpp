@@ -5,6 +5,7 @@
 #include "convolutions.h"
 #include "image_utils.h"
 
+// 4: Tiled AVX2 Multi-Threaded, 6 threads (physical cores only)
 void convolution_tiled_avx2_threads_06(
     const std::vector<uint8_t> &padded,
     std::vector<uint8_t> &output_data,
