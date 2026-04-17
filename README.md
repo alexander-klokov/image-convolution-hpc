@@ -46,6 +46,8 @@ On the CPU, the optimization strategy changes. I no longer manage warps or share
 
 The blurring effect at the output allows for a quick quality check—I just need to open the output image and make sure it is blurred.
 
+<img src="assets/pebble_filtered.png" width=400 />
+
 ## Mathematical Framework for Image Convolution
 
 To evaluate the efficiency of my HPC engine components, I define the workload using three core metrics:
