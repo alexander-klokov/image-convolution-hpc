@@ -392,7 +392,7 @@ This "Super-Peak" performance — delivering an effective 3,660 GFLOPS — prove
 
 #### Comparison Summary: 4K Image Convolution
 
-| Metric | CUDA (RTX 4060) | CPU (Ryzen 5 7535HS) | Winner
+| Metric | GPU (RTX 4060) | CPU (Ryzen 5 7535HS) | Winner
 | :--- | :--- | :--- | :--- |
 | **Algorithm** | $O(K^{2})$ Brute-Force | $O(1)$ Sliding Window | CPU (Algorithmic) |
 | **Execution Time** | 47.55 ms | 5.6 ms | CPU (8.5x faster) |
